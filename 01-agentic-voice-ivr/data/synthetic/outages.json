@@ -1,0 +1,14 @@
+[
+  {
+    "zip": "73301",
+    "active": true,
+    "description": "A fiber cut is affecting internet service in your area",
+    "eta": "2026-10-24T18:00:00"
+  },
+  {
+    "zip": "98101",
+    "active": false,
+    "description": "Resolved maintenance",
+    "eta": null
+  }
+]

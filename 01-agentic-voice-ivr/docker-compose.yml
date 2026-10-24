@@ -1,0 +1,30 @@
+# Local stack: IVR API + Prometheus. Optional Ollama for free local LLM NLU:
+#   docker compose --profile llm up
+#   then set IVR_NLU_PROVIDER=openai_compatible and IVR_LLM_BASE_URL=http://ollama:11434/v1
+services:
+  ivr:
+    build: .
+    image: agentic-voice-ivr:local
+    env_file: [.env]
+    ports: ["8000:8000"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+    depends_on: [ivr]
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [llm]
+    ports: ["11434:11434"]
+    volumes: [ollama:/root/.ollama]
+
+volumes:
+  ollama:
