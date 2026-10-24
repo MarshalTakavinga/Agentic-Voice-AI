@@ -233,3 +233,20 @@ def test_transcribe_passes_decoded_array_not_bytes():
     model.transcribe = capture
     assert voice.transcribe(_wav(48000, 2), model=model) == "hi"
     assert isinstance(model.audio, np.ndarray)  # PyAV is never needed for recordings
+
+
+# ------------------------------------------------------------------ hot reload of project code
+def test_changed_project_code_is_reloaded_without_reboot():
+    import os
+
+    at = _page("ivr", ivr_mode="⌨️ Text chat")  # imports the IVR package
+    stale = sys.modules["app.main"]
+    target = DEMO.parent / "01-agentic-voice-ivr" / "app" / "main.py"
+    before = target.stat()
+    os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))  # simulate a git pull
+    try:
+        at.chat_input[0].set_value("what's my balance").run()
+        assert not at.exception, at.exception
+        assert sys.modules["app.main"] is not stale  # fresh code was imported, no reboot needed
+    finally:
+        os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
