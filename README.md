@@ -6,6 +6,7 @@ A portfolio of ten projects applying agentic AI to VoIP, IVR and contact-center 
 
 [![ivr](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/ivr.yml/badge.svg)](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/ivr.yml)
 [![sip-call-doctor](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/sip-call-doctor.yml/badge.svg)](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/sip-call-doctor.yml)
+[![demo](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/demo.yml/badge.svg)](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/demo.yml)
 
 ---
 
@@ -25,6 +26,17 @@ A portfolio of ten projects applying agentic AI to VoIP, IVR and contact-center 
 | 10 | Smart Call Router | Explainable routing recommendations evaluated in a discrete-event simulator | Intermediate | Planned | [`10-smart-call-router/`](10-smart-call-router) |
 
 "Planned" folders contain the specification and a starter skeleton only. Status changes here only when the code exists and its CI is green.
+
+## Interactive demo
+
+Try projects 01 and 02 in your browser: call the IVR and watch its state and tool audit trail update every turn, or diagnose sample SIP captures and see packet-cited findings with ladder diagrams.
+
+```bash
+pip install -r demo/requirements.txt
+streamlit run demo/streamlit_app.py
+```
+
+See [`demo/`](demo) for details and for publishing a free public link on Streamlit Community Cloud.
 
 ## Design principles behind every project
 
@@ -75,6 +87,7 @@ Use a separate virtual environment per project; each pins its own dependencies.
 ```text
 01-…/ to 10-…/        one project per folder: own README, pyproject, tests, Dockerfile
 .github/workflows/    one CI workflow per built project, triggered only by changes to its folder
+demo/                 Streamlit app running projects 01 and 02 in the browser
 docs/                 portfolio strategy, roadmap and reference material
 ```
 
