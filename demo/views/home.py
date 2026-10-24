@@ -13,7 +13,8 @@ left, right = st.columns(2, gap="large")
 with left, st.container(border=True):
     st.subheader("📞 Agentic Voice IVR")
     st.markdown(
-        "Call a fictional fiber ISP. The agent verifies you, checks balances and outages, "
+        "**Call it with your voice** (or type). Dial a fictional fiber ISP: the agent verifies you, "
+        "checks balances and outages, "
         "books technicians with explicit consent, and hands off to a human with context.\n\n"
         "**Watch for:** the live state panel and tool audit trail. Every guardrail "
         "(authentication, customer binding, consent) is enforced in code, not in the prompt."

@@ -13,4 +13,7 @@ python-multipart==0.0.32
 opentelemetry-api==1.45.1
 opentelemetry-sdk==1.45.1
 scapy==2.8.0
+numpy==2.5.3
+faster-whisper==1.2.1  # speech-to-text (model downloads on first use)
+edge-tts==7.3.1  # neural text-to-speech; browser speech is the fallback
 pytest>=8.0  # for demo/tests only

@@ -2,6 +2,8 @@
 
 **AI agents that are safe to put on a phone line — and the tooling to debug the phone line too.**
 
+**[▶️ Try the live demo](https://agentic-voice-ai.streamlit.app)**
+
 A portfolio of ten projects applying agentic AI to VoIP, IVR and contact-center modernization, by **Marshal Takavinga**. Each numbered folder is an independently runnable project with its own README, tests and CI workflow.
 
 [![ivr](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/ivr.yml/badge.svg)](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/ivr.yml)
@@ -29,7 +31,11 @@ A portfolio of ten projects applying agentic AI to VoIP, IVR and contact-center 
 
 ## Interactive demo
 
-Try projects 01 and 02 in your browser: call the IVR and watch its state and tool audit trail update every turn, or diagnose sample SIP captures and see packet-cited findings with ladder diagrams.
+### ▶️ [agentic-voice-ai.streamlit.app](https://agentic-voice-ai.streamlit.app)
+
+**Call the IVR with your voice**: speak, hear it answer, use the keypad, and watch its state and tool audit trail update every turn. Or **diagnose SIP captures** and see packet-cited findings with ladder diagrams. Free hosting may take about 30 seconds to wake up on the first visit.
+
+Run it locally:
 
 ```bash
 pip install -r demo/requirements.txt

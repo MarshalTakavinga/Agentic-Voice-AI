@@ -12,7 +12,7 @@ from pathlib import Path
 import streamlit as st
 
 ROOT = Path(__file__).resolve().parent.parent
-for project in ("01-agentic-voice-ivr", "02-sip-call-doctor"):
+for project in ("demo", "01-agentic-voice-ivr", "02-sip-call-doctor"):
     path = str(ROOT / project)
     if path not in sys.path:
         sys.path.insert(0, path)

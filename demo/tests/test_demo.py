@@ -1,55 +1,202 @@
-"""Headless UI tests using Streamlit's AppTest."""
+"""Headless UI tests using Streamlit's AppTest, plus unit tests for the voice helpers."""
 
+import sys
 from pathlib import Path
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
-APP = str(Path(__file__).resolve().parent.parent / "streamlit_app.py")
+DEMO = Path(__file__).resolve().parent.parent
+APP = str(DEMO / "streamlit_app.py")
+sys.path.insert(0, str(DEMO))
+
+import voice  # noqa: E402
+
+REAL_SYNTHESIZE = voice.synthesize  # captured before the autouse stub replaces it
+
+FAKE_MP3 = b"ID3\x04\x00fake-mp3"
 
 
-def _run(page: str) -> AppTest:
+@pytest.fixture(autouse=True)
+def stub_speech(monkeypatch):
+    """No network or model downloads in tests: speech in/out are stubbed."""
+    spoken = []
+    monkeypatch.setattr(voice, "synthesize", lambda text, voice=None: spoken.append(text) or FAKE_MP3)
+    return spoken
+
+
+def _page(page: str, **state) -> AppTest:
     at = AppTest.from_file(APP, default_timeout=60)
+    for key, value in state.items():
+        at.session_state[key] = value
     at.run()
     at.switch_page(f"views/{page}.py").run()
     assert not at.exception, at.exception
     return at
 
 
+def _button(at: AppTest, label: str):
+    return next(b for b in at.button if b.label == label)
+
+
+# ------------------------------------------------------------------ overview
 def test_home_renders():
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
     assert any("Agentic Voice AI" in t.value for t in at.title)
 
 
-def test_ivr_full_balance_call():
-    at = _run("ivr")
+# ------------------------------------------------------------------ IVR: voice mode
+def test_voice_call_dial_and_greeting_is_spoken(stub_speech):
+    at = _page("ivr")
+    _button(at, "📞 Call Northwind Fiber").click().run()
+    assert not at.exception, at.exception
     assert "Northwind Fiber" in at.chat_message[0].markdown[0].value
+    assert stub_speech and "Northwind Fiber" in stub_speech[0]  # greeting sent to TTS
+
+
+def test_voice_call_keypad_menu_and_pin(stub_speech):
+    at = _page("ivr")
+    _button(at, "📞 Call Northwind Fiber").click().run()
+    for key in ["1", "#", "1", "0", "0", "0", "0", "0", "0", "1", "#", "1", "2", "3", "4", "#"]:
+        _button(at, key).click().run()
+        assert not at.exception, at.exception
+    assert "$89.99" in at.chat_message[-1].markdown[0].value
+    assert any(m.label == "Verified" and m.value == "Yes" for m in at.metric)
+    assert "$89.99" in stub_speech[-1]  # the answer is spoken, not just shown
+
+
+def test_keypad_star_clears_buffer():
+    at = _page("ivr")
+    _button(at, "📞 Call Northwind Fiber").click().run()
+    _button(at, "9").click().run()
+    _button(at, "*").click().run()
+    _button(at, "#").click().run()  # empty input -> the IVR reprompts
+    assert "didn't catch" in at.chat_message[-1].markdown[0].value
+
+
+def test_hang_up_returns_to_dial_screen():
+    at = _page("ivr")
+    _button(at, "📞 Call Northwind Fiber").click().run()
+    _button(at, "📴 Hang up").click().run()
+    assert any(b.label == "📞 Call Northwind Fiber" for b in at.button)
+
+
+# ------------------------------------------------------------------ IVR: text mode
+def test_text_chat_full_balance_call():
+    at = _page("ivr", ivr_mode="⌨️ Text chat")
     for text in ["what's my balance", "10000001", "1234"]:
         at.chat_input[0].set_value(text).run()
         assert not at.exception, at.exception
-    last = at.chat_message[-1].markdown[0].value
-    assert "$89.99" in last
-    assert any(m.label == "Verified" and m.value == "Yes" for m in at.metric)
+    assert "$89.99" in at.chat_message[-1].markdown[0].value
 
 
-def test_ivr_quick_button_and_escalation():
-    at = _run("ivr")
+def test_text_chat_escalation():
+    at = _page("ivr", ivr_mode="⌨️ Text chat")
     next(b for b in at.button if "Human" in b.label).click().run()
-    assert not at.exception
     assert any("transferred" in w.value for w in at.warning)
 
 
+# ------------------------------------------------------------------ SIP Call Doctor
 def test_sip_doctor_sample_nat():
-    at = _run("sip_doctor")
+    at = _page("sip_doctor")
     at.selectbox[0].select("nat_one_way_audio").run()
     assert not at.exception, at.exception
     assert any(m.label == "Root cause" and m.value == "media_to_private_address" for m in at.metric)
-    assert any("Matches" in c.value for c in at.caption)
 
 
 def test_sip_doctor_every_sample_matches_label():
-    at = _run("sip_doctor")
+    at = _page("sip_doctor")
     for option in at.selectbox[0].options:
         at.selectbox[0].select(option).run()
         assert not at.exception, (option, at.exception)
         assert any("Matches" in c.value for c in at.caption), option
+
+
+# ------------------------------------------------------------------ voice helpers
+class _Seg:
+    def __init__(self, text):
+        self.text = text
+
+
+class _FakeModel:
+    def __init__(self, texts):
+        self.texts, self.kwargs = texts, None
+
+    def transcribe(self, audio, **kwargs):
+        self.kwargs = kwargs
+        return iter(_Seg(t) for t in self.texts), None
+
+
+def test_transcribe_joins_segments_and_uses_vad():
+    model = _FakeModel([" one zero zero", " zero zero zero zero one "])
+    assert voice.transcribe(_wav(48000, 1), model=model) == "one zero zero zero zero zero zero one"
+    assert model.kwargs["vad_filter"] is True and model.kwargs["language"] == "en"
+    assert "balance" in model.kwargs["hotwords"]
+
+
+def test_transcribe_empty_audio_is_silence():
+    assert voice.transcribe(b"", model=_FakeModel(["ignored"])) == ""
+
+
+def test_tts_failure_falls_back(monkeypatch):
+    async def unreachable(text, v):
+        raise OSError("network unreachable")
+
+    monkeypatch.setattr(voice, "_edge_tts", unreachable)
+    REAL_SYNTHESIZE.clear()
+    assert REAL_SYNTHESIZE("hello there") is None  # page then renders the browser-speech fallback
+
+
+def test_browser_fallback_escapes_script():
+    out = voice.browser_speech('Hi </script><img src=x onerror=alert(1)> "q"')
+    assert "</script><img" not in out and "<\\/script>" in out
+
+
+def _wav(rate: int, channels: int, seconds: float = 1.0, hz: float = 440.0) -> bytes:
+    import io
+    import wave
+
+    import numpy as np
+
+    t = np.arange(int(rate * seconds)) / rate
+    tone = (0.3 * np.sin(2 * np.pi * hz * t) * 32767).astype("<i2")
+    frames = np.repeat(tone[:, None], channels, axis=1).tobytes()
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(channels)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(frames)
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("rate,channels", [(48000, 1), (48000, 2), (44100, 1), (16000, 1)])
+def test_wav_decoding_resamples_to_16k_mono(rate, channels):
+    import numpy as np
+
+    samples = voice.wav_to_whisper(_wav(rate, channels))
+    assert samples.dtype == np.float32 and samples.ndim == 1
+    assert abs(samples.size - 16000) <= 1
+    peak_hz = np.argmax(np.abs(np.fft.rfft(samples))) * 16000 / samples.size
+    assert abs(peak_hz - 440) < 2  # the signal survives resampling intact
+
+
+def test_very_short_recording_is_treated_as_silence():
+    model = _FakeModel(["should not be called"])
+    assert voice.transcribe(_wav(48000, 1, seconds=0.1), model=model) == ""
+    assert model.kwargs is None
+
+
+def test_transcribe_passes_decoded_array_not_bytes():
+    import numpy as np
+
+    model = _FakeModel(["hi"])
+
+    def capture(audio, **kwargs):
+        model.audio = audio
+        return iter([_Seg("hi")]), None
+
+    model.transcribe = capture
+    assert voice.transcribe(_wav(48000, 2), model=model) == "hi"
+    assert isinstance(model.audio, np.ndarray)  # PyAV is never needed for recordings

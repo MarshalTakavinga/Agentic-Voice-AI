@@ -1,8 +1,12 @@
-"""Interactive call simulator for project 01."""
+"""Call simulator for project 01: a browser phone (speech in, speech out, DTMF keypad) or text chat."""
+
+import hashlib
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
+import voice
 from app.config import Settings
 from app.main import create_app
 
@@ -19,63 +23,147 @@ QUICK = {
     "🔧 Technician": "I need a technician",
     "🙋 Human": "let me talk to a person",
 }
+KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"]
+
+ss = st.session_state
 
 
+# ------------------------------------------------------------------ call control
 def service():
-    if "ivr_service" not in st.session_state:
-        st.session_state.ivr_service = create_app(Settings(log_level="WARNING")).state.service
-    return st.session_state.ivr_service
+    if "ivr_service" not in ss:
+        ss.ivr_service = create_app(Settings(log_level="WARNING")).state.service
+    return ss.ivr_service
 
 
 def new_call() -> None:
     state = service().start_call("demo")
-    st.session_state.ivr_call_id = state["call_id"]
-    st.session_state.ivr_transcript = [("assistant", state["response"])]
+    ss.ivr_call_id = state["call_id"]
+    ss.ivr_transcript = [("assistant", state["response"], None)]
+    ss.ivr_dtmf = ""
+    ss.ivr_turn = 0
+    ss.ivr_speak = True  # play the greeting
 
 
-def say(text: str) -> None:
-    call_id = st.session_state.ivr_call_id
-    if service().get(call_id)["status"] != "in_progress":
+def say(text: str, via: str | None = None) -> None:
+    if service().get(ss.ivr_call_id)["status"] != "in_progress":
         return
-    state = service().take_turn(call_id, text)
-    st.session_state.ivr_transcript += [("user", text or "(silence)"), ("assistant", state["response"])]
+    state = service().take_turn(ss.ivr_call_id, text)
+    ss.ivr_transcript += [("user", text or "(silence)", via), ("assistant", state["response"], None)]
+    ss.ivr_turn += 1
+    ss.ivr_speak = True
 
 
-if "ivr_call_id" not in st.session_state:
-    new_call()
+def handle_recording(audio: bytes) -> str:
+    """Transcribe one recorded turn and send it to the IVR. Returns what was heard."""
+    digest = hashlib.sha256(audio).hexdigest()
+    if ss.get("ivr_last_audio") == digest:  # Streamlit reruns keep the last recording
+        return ""
+    ss.ivr_last_audio = digest
+    heard = voice.transcribe(audio)
+    say(heard, via="🎙️ speech")
+    return heard
 
+
+def hang_up() -> None:
+    for key in ("ivr_call_id", "ivr_transcript", "ivr_dtmf", "ivr_turn", "ivr_speak", "ivr_last_audio"):
+        ss.pop(key, None)
+
+
+def press(key: str) -> None:
+    if key == "#":
+        digits, ss.ivr_dtmf = ss.ivr_dtmf, ""
+        say(digits, via="⌨️ keypad")
+    elif key == "*":
+        ss.ivr_dtmf = ""
+    else:
+        ss.ivr_dtmf += key
+
+
+# ------------------------------------------------------------------ page
 st.title("📞 Agentic Voice IVR")
 st.caption(
-    "You're calling Northwind Fiber, a fictional ISP. Type as a caller would speak, or key digits. "
+    "Call Northwind Fiber, a fictional ISP. Speak through your microphone or use the keypad. "
     "Rules-based NLU and mock enterprise systems; synthetic data only."
 )
+
+mode = st.segmented_control(
+    "Mode", ["🎙️ Voice call", "⌨️ Text chat"], default="🎙️ Voice call", key="ivr_mode", label_visibility="collapsed"
+)
+voice_mode = mode != "⌨️ Text chat"
 
 with st.sidebar:
     st.subheader("Test accounts")
     st.dataframe(TEST_ACCOUNTS, hide_index=True, width="stretch")
-    st.caption("Keypad menu: 1 balance · 2 outage · 3 technician · 0 agent")
-    if st.button("📞 Hang up and call again", width="stretch"):
-        new_call()
-        st.rerun()
+    st.caption("Main menu keys: 1 balance · 2 outage · 3 technician · 0 agent")
     st.subheader("Things to try")
     st.markdown(
-        "- Say the account as words: *one zero zero zero zero zero zero one*\n"
-        "- Give account and PIN together\n"
+        "- Say your account as single digits: *one zero zero zero zero zero zero one*\n"
+        "- Key your PIN on the keypad, then press **#**\n"
         "- Book a technician, say *no*, then *how about friday*\n"
-        "- Change your mind mid-flow\n"
+        "- Change your mind mid-call\n"
         "- Get the PIN wrong three times\n"
         "- Use the fault account to see a graceful failure"
     )
+    if voice_mode:
+        st.caption(
+            "Voice: speech recognition runs on the server (Whisper); replies use a neural voice, "
+            "falling back to your browser's voice if that service is unreachable."
+        )
 
-state = service().get(st.session_state.ivr_call_id)
+if "ivr_call_id" not in ss:
+    if voice_mode:
+        st.markdown("#### Ready to call")
+        if st.button("📞 Call Northwind Fiber", type="primary"):
+            new_call()
+            st.rerun()
+        st.caption("Your browser will ask for microphone access the first time you record.")
+        st.stop()
+    new_call()
+    ss.ivr_speak = False
+
+state = service().get(ss.ivr_call_id)
+in_progress = state["status"] == "in_progress"
 chat_col, state_col = st.columns([3, 2], gap="large")
 
 with chat_col:
-    for role, text in st.session_state.ivr_transcript:
+    for role, text, via in ss.ivr_transcript:
         with st.chat_message(role, avatar="🤖" if role == "assistant" else "🧑"):
             st.markdown(text)
+            if via:
+                st.caption(via)
 
-    if state["status"] == "in_progress":
+    # Speak the latest IVR reply once, right after it's produced.
+    if voice_mode and ss.get("ivr_speak"):
+        ss.ivr_speak = False
+        reply = ss.ivr_transcript[-1][1]
+        audio = voice.synthesize(reply)
+        if audio:
+            st.audio(audio, format="audio/mp3", autoplay=True)
+        else:
+            components.html(voice.browser_speech(reply), height=48)
+
+    if in_progress and voice_mode:
+        recording = st.audio_input("Tap the mic, speak, then tap stop", key=f"mic_{ss.ivr_turn}")
+        if recording is not None:
+            with st.spinner("Listening…"):
+                try:
+                    handle_recording(recording.getvalue())
+                except voice.SpeechUnavailable as exc:
+                    st.error(f"Speech recognition isn't available here ({exc}). Use the keypad or text chat.")
+                    st.stop()
+            st.rerun()
+
+        with st.expander("⌨️ Keypad (DTMF)", expanded=bool(state.get("expecting"))):
+            st.code(ss.ivr_dtmf or " ", language=None)
+            for row in range(4):
+                cols = st.columns(3)
+                for col, key in zip(cols, KEYS[row * 3 : row * 3 + 3], strict=True):
+                    if col.button(key, key=f"key_{key}", width="stretch"):
+                        press(key)
+                        st.rerun()
+            st.caption("Digits collect until you press **#**. Press **\\*** to clear.")
+
+    if in_progress and not voice_mode:
         cols = st.columns(len(QUICK))
         for col, (label, utterance) in zip(cols, QUICK.items(), strict=True):
             if col.button(label, width="stretch"):
@@ -84,14 +172,20 @@ with chat_col:
         if prompt := st.chat_input("Say something to the IVR…"):
             say(prompt)
             st.rerun()
-    elif state["status"] == "escalated":
-        handoff = state.get("handoff") or {}
-        st.warning(
-            f"Call transferred to the **{handoff.get('queue', 'general')}** queue "
-            f"(reason: `{handoff.get('reason')}`). Start a new call from the sidebar."
-        )
-    else:
-        st.success("Call ended. Start a new call from the sidebar.")
+
+    if not in_progress:
+        if state["status"] == "escalated":
+            handoff = state.get("handoff") or {}
+            st.warning(
+                f"Call transferred to the **{handoff.get('queue', 'general')}** queue "
+                f"(reason: `{handoff.get('reason')}`)."
+            )
+        else:
+            st.success("Call ended.")
+
+    if st.button("📴 Hang up" if in_progress else "📞 New call", key="hangup"):
+        hang_up()
+        st.rerun()
 
 with state_col:
     st.subheader("Agent state")
