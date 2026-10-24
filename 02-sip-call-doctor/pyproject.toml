@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sip-call-doctor"
+version = "0.1.0"
+description = "Evidence-first SIP/RTP troubleshooting from packet captures, with grounded AI explanations."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "scapy>=2.5",
+  "structlog>=24.1",
+  "prometheus-client>=0.20",
+  "httpx>=0.27",
+  "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.5", "bandit>=1.7", "pip-audit>=2.7"]
+
+[project.scripts]
+sipdoc = "sipdoc.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sipdoc*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["sipdoc"]
+omit = ["sipdoc/__main__.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S108"]
+"scripts/*" = ["S311", "T201"]
+"sipdoc/cli.py" = ["T201"]
+"sipdoc/analyzers/rules.py" = ["E501"]  # runbook prose reads better unbroken

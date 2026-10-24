@@ -1,0 +1,71 @@
+{
+  "healthy_call": {
+    "signatures": [],
+    "root_cause": null,
+    "note": "Normal answered call with clean bidirectional RTP."
+  },
+  "nat_one_way_audio": {
+    "signatures": [
+      "media_to_private_address",
+      "nat_private_sdp"
+    ],
+    "root_cause": "media_to_private_address",
+    "note": "Phone behind NAT advertises 192.168.1.50; PBX sends RTP there, caller hears nothing."
+  },
+  "one_way_firewall": {
+    "signatures": [
+      "one_way_audio"
+    ],
+    "root_cause": "one_way_audio",
+    "note": "Answered call; PBX never sends RTP (e.g. blocked RTP port range)."
+  },
+  "codec_mismatch": {
+    "signatures": [
+      "codec_mismatch"
+    ],
+    "root_cause": "codec_mismatch",
+    "note": "Phone offers only G.729; PBX does not allow it."
+  },
+  "auth_failure": {
+    "signatures": [
+      "auth_failure"
+    ],
+    "root_cause": "auth_failure",
+    "note": "Digest challenge answered with wrong credentials, then 403."
+  },
+  "setup_timeout": {
+    "signatures": [
+      "large_udp_sip",
+      "setup_timeout"
+    ],
+    "root_cause": "setup_timeout",
+    "note": "Oversized INVITE over UDP to an unreachable trunk; retransmitted, never answered."
+  },
+  "poor_quality": {
+    "signatures": [
+      "rtp_jitter",
+      "rtp_packet_loss"
+    ],
+    "root_cause": "rtp_packet_loss",
+    "note": "Congested WAN: heavy packet loss and jitter toward the caller."
+  },
+  "busy_486": {
+    "signatures": [
+      "call_rejected"
+    ],
+    "root_cause": "call_rejected",
+    "note": "Callee busy."
+  },
+  "register_auth_failure": {
+    "signatures": [
+      "auth_failure"
+    ],
+    "root_cause": "auth_failure",
+    "note": "Registration retried with credentials and challenged again: wrong password."
+  },
+  "caller_cancelled": {
+    "signatures": [],
+    "root_cause": null,
+    "note": "Caller hung up while ringing: normal, not a fault."
+  }
+}

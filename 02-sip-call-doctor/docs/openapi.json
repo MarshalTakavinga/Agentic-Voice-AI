@@ -1,0 +1,666 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SIP Call Doctor",
+    "description": "\nUpload a packet capture; get per-call diagnoses with evidence-cited findings, a SIP ladder,\nand runbook steps. Analyzers are deterministic. An optional LLM narrator rewrites the summary\nbut is rejected unless every claim cites a finding and every number appears in the evidence.\n\nAll bundled captures are **synthetic**. See the README for validation status.\n",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Live",
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Live Health Live Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Ready",
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Ready Health Ready Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/signatures": {
+      "get": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Fault signatures this version detects",
+        "operationId": "signatures_v1_signatures_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Signatures V1 Signatures Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/analyses": {
+      "post": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Upload and analyze a capture",
+        "operationId": "create_analysis_v1_analyses_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_analysis_v1_analyses_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/analyses/{analysis_id}": {
+      "get": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Get Analysis",
+        "operationId": "get_analysis_v1_analyses__analysis_id__get",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Analysis Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/analyses/{analysis_id}/calls/{call_id}/ladder": {
+      "get": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "SIP ladder as Mermaid (default) or plain text",
+        "operationId": "ladder_v1_analyses__analysis_id__calls__call_id__ladder_get",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Analysis Id"
+            }
+          },
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          },
+          {
+            "name": "fmt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "mermaid",
+              "title": "Fmt"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnalysisReport": {
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "title": "Analysis Id"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "packets": {
+            "type": "integer",
+            "title": "Packets"
+          },
+          "sip_messages": {
+            "type": "integer",
+            "title": "Sip Messages"
+          },
+          "rtp_packets": {
+            "type": "integer",
+            "title": "Rtp Packets"
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/CallDiagnosis"
+            },
+            "type": "array",
+            "title": "Calls"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "analysis_id",
+          "source_name",
+          "packets",
+          "sip_messages",
+          "rtp_packets",
+          "calls"
+        ],
+        "title": "AnalysisReport"
+      },
+      "Body_create_analysis_v1_analyses_post": {
+        "properties": {
+          "capture": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Capture"
+          }
+        },
+        "type": "object",
+        "required": [
+          "capture"
+        ],
+        "title": "Body_create_analysis_v1_analyses_post"
+      },
+      "CallDiagnosis": {
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "caller": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caller"
+          },
+          "callee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Callee"
+          },
+          "started_at": {
+            "type": "number",
+            "title": "Started At"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome"
+          },
+          "final_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Status"
+          },
+          "sip_messages": {
+            "type": "integer",
+            "title": "Sip Messages"
+          },
+          "rtp_streams": {
+            "items": {
+              "$ref": "#/components/schemas/RtpStream"
+            },
+            "type": "array",
+            "title": "Rtp Streams"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Findings"
+          },
+          "root_cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Cause"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "narrator": {
+            "type": "string",
+            "title": "Narrator"
+          },
+          "next_steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Next Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_id",
+          "kind",
+          "caller",
+          "callee",
+          "started_at",
+          "outcome",
+          "final_status",
+          "sip_messages",
+          "rtp_streams",
+          "findings",
+          "root_cause",
+          "summary",
+          "narrator",
+          "next_steps"
+        ],
+        "title": "CallDiagnosis"
+      },
+      "Evidence": {
+        "properties": {
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "fact": {
+            "type": "string",
+            "title": "Fact"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref",
+          "fact"
+        ],
+        "title": "Evidence"
+      },
+      "Finding": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": ""
+          },
+          "signature": {
+            "type": "string",
+            "title": "Signature"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "major",
+              "minor",
+              "info"
+            ],
+            "title": "Severity"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": "array",
+            "title": "Evidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signature",
+          "severity",
+          "title",
+          "detail",
+          "evidence"
+        ],
+        "title": "Finding"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "RtpStream": {
+        "properties": {
+          "ssrc": {
+            "type": "string",
+            "title": "Ssrc"
+          },
+          "src_ip": {
+            "type": "string",
+            "title": "Src Ip"
+          },
+          "src_port": {
+            "type": "integer",
+            "title": "Src Port"
+          },
+          "dst_ip": {
+            "type": "string",
+            "title": "Dst Ip"
+          },
+          "dst_port": {
+            "type": "integer",
+            "title": "Dst Port"
+          },
+          "payload_type": {
+            "type": "integer",
+            "title": "Payload Type"
+          },
+          "packets": {
+            "type": "integer",
+            "title": "Packets"
+          },
+          "expected": {
+            "type": "integer",
+            "title": "Expected"
+          },
+          "lost": {
+            "type": "integer",
+            "title": "Lost"
+          },
+          "loss_pct": {
+            "type": "number",
+            "title": "Loss Pct"
+          },
+          "jitter_ms": {
+            "type": "number",
+            "title": "Jitter Ms"
+          },
+          "max_jitter_ms": {
+            "type": "number",
+            "title": "Max Jitter Ms"
+          },
+          "first_ts": {
+            "type": "number",
+            "title": "First Ts"
+          },
+          "last_ts": {
+            "type": "number",
+            "title": "Last Ts"
+          },
+          "estimated_mos": {
+            "type": "number",
+            "title": "Estimated Mos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ssrc",
+          "src_ip",
+          "src_port",
+          "dst_ip",
+          "dst_port",
+          "payload_type",
+          "packets",
+          "expected",
+          "lost",
+          "loss_pct",
+          "jitter_ms",
+          "max_jitter_ms",
+          "first_ts",
+          "last_ts",
+          "estimated_mos"
+        ],
+        "title": "RtpStream"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

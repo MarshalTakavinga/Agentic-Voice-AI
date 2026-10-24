@@ -1,0 +1,11 @@
+services:
+  sipdoc:
+    build: .
+    image: sip-call-doctor:local
+    env_file: [.env]
+    ports: ["8001:8000"]
+    read_only: true
+    tmpfs: [/tmp]  # uploads are written here and deleted right after analysis
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    restart: unless-stopped
