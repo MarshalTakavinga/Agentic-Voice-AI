@@ -4,7 +4,7 @@
 
 [![ci](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/ivr.yml/badge.svg)](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/ivr.yml)
 ![python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)
-![status](https://img.shields.io/badge/status-milestone%201%20of%205-orange)
+![status](https://img.shields.io/badge/status-milestone%202%20of%205-orange)
 
 Project 01 of the [**Agentic Voice AI**](../README.md) portfolio. Runs entirely on a laptop with no paid accounts.
 
@@ -42,6 +42,38 @@ YOU: how about friday
 IVR: The earliest available technician visit is Friday, October 30 between 8 AM and noon. ...
 YOU: yes
 IVR: You're all set for Friday, October 30 between 8 AM and noon. Your confirmation number is N W 1 0 0 0 0 1.
+```
+
+## The Claude planner (Milestone 2)
+
+The keyword rules handle most turns at zero cost. When they can't map what the caller said, for example *"my wifi keeps cutting out, could someone look at it friday"* or *"this is ridiculous"*, the agent can ask **Claude Haiku 5.5** to plan the turn with tool calling. The model never gets the keys:
+
+| Guardrail | How it's enforced |
+|---|---|
+| **Least-privilege tools** | The planner sees four tools: `start_tasks`, `check_outage_in_area`, `get_my_balance`, `transfer_to_human`. None of them take an account number, PIN, customer ID, ZIP or slot. Identity and ZIP come from the verified session. Booking is not exposed; it stays in the deterministic flow with an explicit yes/no. |
+| **Allowlist** | Any other tool name the model emits is refused (`tool_not_permitted`) and logged in the audit trail. |
+| **Same registry checks** | `get_my_balance` still runs through `requires_auth` and customer binding. An unverified caller gets `authentication_required`. |
+| **Redaction** | Digit runs in the caller's words become `[number]` before they're sent. The model is never called while digits are being collected. |
+| **Grounded replies** | A reply is spoken only if every number in it came from a tool result this turn, and it makes no action or identity claim ("booked", "credited", "you're verified", "logged in as..."). Otherwise the rules reprompt is used. |
+| **Fallback** | Timeout, HTTP error, bad output, an exhausted budget or a hit per-call cap all fall back to rules; the caller never hears an error. |
+
+**Cost controls.** It uses the cheapest current model, Haiku 5.5 ($0.10 / $0.50 per million input/output tokens). Other controls:
+
+* `max_tokens` is 200.
+* Temperature is 0.
+* The system prompt is cached.
+* At most 3 model calls per turn, stopping on a terminal action.
+* A per-call cap (`IVR_PLANNER_MAX_TURNS_PER_CALL`, default 8).
+* A process-wide daily budget (`IVR_PLANNER_DAILY_BUDGET_USD`, default $1).
+
+Each planned turn's trace records tokens, cost and latency. The planner is **off by default** (`IVR_PLANNER_ENABLED=false`).
+
+**Prompt-injection evals.** [`evals/injection_attacks.json`](evals/injection_attacks.json) holds 8 attacks: admin override, skip verification, booking without consent, credential-tool injection, cross-customer identifiers, a fake credit, PIN exfiltration during collection and a tool flood. `scripts/run_injection_evals.py` replays them against a **compromised model** that does whatever the attacker asks, which is the worst case. CI requires 0 unauthorized tool successes and 0 forbidden content spoken. `--live` sends the same attacks to real Claude (needs `IVR_ANTHROPIC_API_KEY`).
+
+```bash
+IVR_PLANNER_ENABLED=true IVR_ANTHROPIC_API_KEY=sk-ant-... make run
+python scripts/run_injection_evals.py          # free, offline
+python scripts/run_injection_evals.py --live   # a few cents at most on Haiku
 ```
 
 ## Architecture
@@ -179,11 +211,12 @@ curl -s -X POST localhost:8000/v1/calls/$CALL/turns -H "X-API-Key: $KEY" \
 
 | Component | Status | Evidence |
 |---|---|---|
-| Conversation engine, tool registry, guardrails | **Implemented & tested** | 76 tests, 14 eval scenarios, CI |
+| Conversation engine, tool registry, guardrails | **Implemented & tested** | 114 tests, 14 eval scenarios, 8 injection attacks, CI |
 | FastAPI service under uvicorn | **Implemented & tested** | HTTP smoke test in CI container job |
 | Rules NLU (speech text + DTMF) | **Implemented & tested** | `tests/test_nlu.py` |
 | Twilio webhook contract & signature validation | **Simulated** | TwiML shape tests; signature algorithm matches Twilio's official `RequestValidator` on a reference vector. Not yet run against a live Twilio number. |
 | OpenAI-compatible LLM NLU (Ollama / OpenAI / vLLM) | **Simulated** | Tested with a mocked HTTP transport; not benchmarked against a live model |
+| Claude planner (Messages API tool calling, Haiku 5.5) | **Simulated** | Tested with a scripted fake that returns the documented response shape, plus a compromised-model injection suite. Run `--live` and update this row once tested against the real API. |
 | Amazon Bedrock NLU (Converse API, forced tool use) | **Simulated** | Tested against a stub returning the documented response shape; not run against a live account |
 | CRM / billing / outage / scheduling / ACD | **Mock adapter** | Synthetic JSON behind the `CustomerSystem` port |
 
@@ -231,6 +264,8 @@ See [SECURITY.md](SECURITY.md) for known gaps.
 ```text
 app/
   agent/graph.py      LangGraph state machine (nodes, routing, prompts)
+  agent/planner.py    Claude planner: least-privilege tools, grounding, budget
+  injection_evals.py  Prompt-injection suite (compromised-model and live modes)
   tools.py            Tool registry and guardrails
   nlu/                rules, OpenAI-compatible and Bedrock providers
   adapters/           CustomerSystem port + mock implementation
@@ -239,6 +274,7 @@ app/
   observability.py    Logging with redaction, metrics, tracing
   evals.py            Scenario runner shared by pytest and the CLI
 evals/scenarios.json  14 conversation scenarios
+evals/injection_attacks.json  8 prompt-injection attacks
 scripts/              simulator, eval report, synthetic data generator
 ```
 
@@ -246,8 +282,8 @@ scripts/              simulator, eval report, synthetic data generator
 
 | Milestone | Scope | Status |
 |---|---|---|
-| **1. Guarded conversational core** | LangGraph agent, tool registry, rules + LLM NLU, Twilio webhooks, JSON API, evals, CI | ✅ this release |
-| 2. LLM planner with tool calling | LLM chooses tools from `GET /v1/tools` schemas within the same registry guardrails; open-ended Q&A refusal policy; prompt-injection eval set | Planned |
+| **1. Guarded conversational core** | LangGraph agent, tool registry, rules + LLM NLU, Twilio webhooks, JSON API, evals, CI | ✅ done |
+| **2. LLM planner with tool calling** | Claude plans turns the rules can't map, using least-privilege tools inside the same registry guardrails; grounded replies; cost budget; prompt-injection eval set | ✅ this release |
 | 3. Horizontal scale | Redis session store, per-account verification lockout across calls, idempotent bookings, k6 load test | Planned |
 | 4. Contact-center integration | Amazon Connect contact flow + Lex V2 code hook (Lambda) as a second channel; Genesys Cloud Architect data action; real-time handoff into an agent desktop | Planned |
 | 5. Streaming voice | Twilio Media Streams / WebRTC with streaming ASR and TTS, barge-in, latency budget per turn | Planned |

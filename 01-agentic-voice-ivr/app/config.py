@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     bedrock_model_id: str = ""  # set to a model ID enabled in your AWS account
     aws_region: str = "us-east-1"
 
+    # LLM planner (Milestone 2): Claude handles turns the rules can't map. Off unless a key is set.
+    planner_enabled: bool = False
+    anthropic_api_key: SecretStr = SecretStr("")
+    planner_model: str = "claude-haiku-5-5"
+    planner_timeout_s: float = Field(default=8.0, gt=0, le=30)
+    planner_max_tokens: int = Field(default=200, ge=50, le=1024)
+    planner_max_turns_per_call: int = Field(default=8, ge=0, le=50)
+    planner_daily_budget_usd: float = Field(default=1.0, ge=0)
+
     # Conversation policy.
     max_auth_attempts: int = Field(default=3, ge=1, le=5)
     max_no_match: int = Field(default=3, ge=1, le=5)

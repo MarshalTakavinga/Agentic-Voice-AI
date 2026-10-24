@@ -22,6 +22,24 @@ from app.service import CallEnded, CallNotFound, CallService
 from app.sessions import InMemorySessionStore
 from app.tools import build_registry
 
+
+def build_planner(settings: Settings, registry, client=None, budget=None):
+    """Return a Claude planner when enabled and keyed (or given a client), else None.
+    Pass a shared ``budget`` so several app instances draw on one daily spend cap."""
+    key = settings.anthropic_api_key.get_secret_value()
+    if not settings.planner_enabled or not (key or client):
+        return None
+    from app.agent.planner import AnthropicClient, Budget, Planner
+
+    return Planner(
+        client or AnthropicClient(key, settings.planner_model, settings.planner_timeout_s),
+        registry,
+        budget or Budget(settings.planner_daily_budget_usd),
+        max_tokens=settings.planner_max_tokens,
+        max_turns_per_call=settings.planner_max_turns_per_call,
+    )
+
+
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9\-]{8,64}$")
 
 DESCRIPTION = """
@@ -35,13 +53,18 @@ integrations are live-tested and which are not.
 """
 
 
-def create_app(settings: Settings | None = None, system: CustomerSystem | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, system: CustomerSystem | None = None, planner_budget=None
+) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
     configure_tracing(settings.otel_console_exporter)
 
     system = system or MockCustomerSystem(settings.data_dir)
-    agent = IVRAgent(build_nlu(settings), build_registry(system), settings)
+    registry = build_registry(system)
+    agent = IVRAgent(
+        build_nlu(settings), registry, settings, planner=build_planner(settings, registry)
+    )
     service = CallService(agent, InMemorySessionStore(ttl_s=settings.session_ttl_s))
 
     app = FastAPI(title="Agentic Voice IVR", version=__version__, description=DESCRIPTION)

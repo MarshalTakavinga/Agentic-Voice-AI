@@ -97,6 +97,39 @@ def test_text_chat_escalation():
     assert any("transferred" in w.value for w in at.warning)
 
 
+# ------------------------------------------------------------------ IVR: Claude planner
+def test_planner_off_without_key(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    at = _page("ivr", ivr_mode="⌨️ Text chat")
+    assert any("rules-only" in i.value for i in at.info)
+
+
+class _ScriptedClaude:
+    """Stands in for AnthropicClient; no network. Returns one tool call, real response shape."""
+
+    def __init__(self, *args, **kwargs):
+        self.model = "claude-haiku-5-5"
+
+    def create(self, *, system, tools, messages, max_tokens):
+        assert "10000001" not in str(messages)  # identifiers never reach the model
+        block = {"type": "tool_use", "id": "toolu_1", "name": "transfer_to_human", "input": {"reason": "upset"}}
+        return {"content": [block], "usage": {"input_tokens": 1000, "output_tokens": 30}}
+
+
+def test_planner_on_handles_messy_request_and_shows_cost(monkeypatch):
+    import app.agent.planner as planner
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
+    monkeypatch.setattr(planner, "AnthropicClient", _ScriptedClaude)
+    at = _page("ivr", ivr_mode="⌨️ Text chat")
+    at.chat_input[0].set_value("this is ridiculous, nothing ever works").run()
+    assert not at.exception, at.exception
+    assert any("transferred" in w.value for w in at.warning)
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["Claude calls this session"] == "1"
+    assert metrics["Session cost"] == "$0.0001"  # 1000 in + 30 out tokens on Haiku 5.5
+
+
 # ------------------------------------------------------------------ SIP Call Doctor
 def test_sip_doctor_sample_nat():
     at = _page("sip_doctor")

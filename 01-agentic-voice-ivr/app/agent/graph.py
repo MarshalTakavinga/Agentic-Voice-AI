@@ -2,6 +2,8 @@
 
     START -> understand -> route --+-> authenticate --+-> fulfill --+-> END
                                    |                  +-> escalate  +-> escalate
+                                   +-> plan (LLM, only when rules can't map the request)
+                                   |     +-> authenticate / fulfill / escalate / END
                                    +-> fulfill / confirm / escalate / reprompt / help / end
 
 State is returned to the caller after every turn and persisted by the session store, so the
@@ -13,7 +15,7 @@ from __future__ import annotations
 import operator
 import time
 from datetime import datetime
-from typing import Annotated, Any, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -22,6 +24,9 @@ from app.domain import spoken_time
 from app.nlu import NLUProvider
 from app.observability import CALL_OUTCOMES, TURN_LATENCY, TURNS, tracer
 from app.tools import ToolContext, ToolRegistry, ToolResult
+
+if TYPE_CHECKING:
+    from app.agent.planner import Planner
 
 AUTH_REQUIRED = frozenset({"check_balance", "schedule_technician"})
 BUSINESS_INTENTS = frozenset({"check_balance", "check_outage", "schedule_technician"})
@@ -64,6 +69,13 @@ class IVRState(TypedDict, total=False):
     completed_tasks: list[str]
     handoff: dict[str, Any] | None
     events: Annotated[list[dict[str, Any]], operator.add]
+    # Planner (Milestone 2)
+    last_reply: str
+    planner_turns: int
+    planner_trace: dict[str, Any] | None
+    planner_outcome: str | None
+    queued_tasks: list[str]
+    continue_queue: bool
 
 
 def _say(state: IVRState, text: str) -> str:
@@ -76,10 +88,17 @@ def _digits(value: str) -> str:
 
 
 class IVRAgent:
-    def __init__(self, nlu: NLUProvider, tools: ToolRegistry, settings: Settings) -> None:
+    def __init__(
+        self,
+        nlu: NLUProvider,
+        tools: ToolRegistry,
+        settings: Settings,
+        planner: Planner | None = None,
+    ) -> None:
         self.nlu = nlu
         self.tools = tools
         self.settings = settings
+        self.planner = planner
         self.graph = self._build()
 
     # ------------------------------------------------------------ public API
@@ -103,6 +122,12 @@ class IVRAgent:
             completed_tasks=[],
             handoff=None,
             events=[],
+            last_reply=GREETING,
+            planner_turns=0,
+            planner_trace=None,
+            planner_outcome=None,
+            queued_tasks=[],
+            continue_queue=False,
         )
 
     def handle_turn(self, state: IVRState, utterance: str) -> IVRState:
@@ -114,6 +139,7 @@ class IVRAgent:
             span.set_attribute("ivr.intent", result["nlu"]["intent"])
             span.set_attribute("ivr.status", result["status"])
         result.pop("utterance", None)  # never persist raw caller speech in session state
+        result["last_reply"] = result["response"]
         TURN_LATENCY.observe(time.perf_counter() - started)
         TURNS.labels(result["nlu"]["intent"], state.get("channel", "api")).inc()
         if result["status"] != "in_progress":
@@ -132,6 +158,7 @@ class IVRAgent:
             "reprompt",
             "help",
             "end",
+            "plan",
         ):
             g.add_node(name, getattr(self, f"_{name}"))
         g.add_edge(START, "understand")
@@ -139,6 +166,7 @@ class IVRAgent:
         g.add_conditional_edges("authenticate", self._after_auth)
         g.add_conditional_edges("fulfill", self._after_action)
         g.add_conditional_edges("confirm", self._after_action)
+        g.add_conditional_edges("plan", self._after_plan)
         for terminal in ("escalate", "reprompt", "help", "end"):
             g.add_edge(terminal, END)
         return g.compile()
@@ -149,6 +177,8 @@ class IVRAgent:
             return "escalate"
         if intent == "goodbye":
             return "end"
+        if self._wants_planner(s):
+            return "plan"
         if intent == "no_match":
             return "escalate" if s["no_match_count"] >= self.settings.max_no_match else "reprompt"
         if intent in ("affirm", "deny") and s.get("pending_action"):
@@ -165,9 +195,42 @@ class IVRAgent:
             return "escalate"
         return "fulfill" if s.get("authenticated") else END
 
+    def _after_action(self, s: IVRState) -> str:
+        if s.get("force_escalate"):
+            return "escalate"
+        if s.get("continue_queue"):  # a queued task from a multi-part request starts now
+            return self._task_entry(s)
+        return END
+
+    def _wants_planner(self, s: IVRState) -> bool:
+        """Call the LLM only when the rules couldn't map the request to a goal: never while
+        collecting identifiers, and never once the per-call or daily budget is used up."""
+        if self.planner is None or s.get("expecting") or s.get("pending_action"):
+            return False
+        intent = s["nlu"]["intent"]
+        unmapped = intent == "no_match" or (intent == "provide_info" and not s.get("active_intent"))
+        return unmapped and self.planner.allowed(s)
+
     @staticmethod
-    def _after_action(s: IVRState) -> str:
-        return "escalate" if s.get("force_escalate") else END
+    def _task_entry(s: IVRState) -> str:
+        if s.get("active_intent") in AUTH_REQUIRED and not s.get("authenticated"):
+            return "authenticate"
+        return "fulfill"
+
+    def _after_plan(self, s: IVRState) -> str:
+        outcome = s.get("planner_outcome")
+        if outcome == "transfer":
+            return "escalate"
+        if outcome == "start_tasks":
+            return self._task_entry(s)
+        if outcome == "fallback":
+            if (
+                s["nlu"]["intent"] == "no_match"
+                and s["no_match_count"] >= self.settings.max_no_match
+            ):
+                return "escalate"
+            return "reprompt" if s["nlu"]["intent"] == "no_match" else "help"
+        return END
 
     # ------------------------------------------------------------ helpers
     def _call(
@@ -185,13 +248,22 @@ class IVRAgent:
         return result, event
 
     def _task_done(self, s: IVRState, task: str, text: str, events: list[dict]) -> dict:
-        return {
+        update = {
             "active_intent": None,
             "expecting": None,
             "events": events,
             "completed_tasks": [*s.get("completed_tasks", []), task],
             "response": _say(s, f"{text} {ANYTHING_ELSE}"),
         }
+        queue = [t for t in s.get("queued_tasks", []) if t != task]
+        if queue:  # multi-part request: move straight on to the next task
+            update.update(
+                active_intent=queue[0],
+                queued_tasks=queue[1:],
+                continue_queue=True,
+                response=_say(s, text),
+            )
+        return update
 
     @staticmethod
     def _system_error(s: IVRState, events: list[dict]) -> dict:
@@ -211,10 +283,14 @@ class IVRAgent:
             "response": "",
             "turn": s.get("turn", 0) + 1,
             "force_escalate": False,
+            "continue_queue": False,
+            "planner_trace": None,
+            "planner_outcome": None,
             "no_match_count": s.get("no_match_count", 0) + 1 if nlu.intent == "no_match" else 0,
         }
         if nlu.intent in BUSINESS_INTENTS and nlu.intent != s.get("active_intent"):
             update["active_intent"] = nlu.intent  # caller changed goals mid-conversation
+            update["queued_tasks"] = []
         if nlu.intent not in ("affirm", "deny"):
             update["pending_action"] = None  # an offer only survives a direct yes/no
         return update
@@ -378,7 +454,7 @@ class IVRAgent:
         return {**done, "pending_action": None}
 
     def _escalate(self, s: IVRState) -> dict:
-        if s["nlu"]["intent"] == "agent":
+        if s["nlu"]["intent"] == "agent" or s.get("planner_outcome") == "transfer":
             reason, prefix = "caller_requested", "Sure."
         elif s.get("auth_attempts", 0) >= self.settings.max_auth_attempts:
             reason, prefix = "auth_failed", ""
@@ -413,6 +489,29 @@ class IVRAgent:
                 "yourself.".strip(),
             ),
         }
+
+    def _plan(self, s: IVRState) -> dict:
+        result = self.planner.plan(s, s.get("utterance", ""))
+        update: dict[str, Any] = {
+            "planner_turns": s.get("planner_turns", 0) + 1,
+            "planner_trace": result.trace,
+            "planner_outcome": result.action,
+            "events": result.events,
+        }
+        if result.action != "fallback":
+            update["no_match_count"] = 0  # the planner understood the caller
+        if result.action == "start_tasks":
+            slots = dict(s.get("slots", {}))
+            if result.preferred_day:
+                slots["preferred_day"] = result.preferred_day
+            update.update(active_intent=result.tasks[0], queued_tasks=result.tasks[1:], slots=slots)
+        elif result.action == "reply":
+            done = [t for t in result.completed if t not in s.get("completed_tasks", [])]
+            update.update(
+                response=_say(s, result.reply),
+                completed_tasks=[*s.get("completed_tasks", []), *done],
+            )
+        return update
 
     def _reprompt(self, s: IVRState) -> dict:
         expecting = s.get("expecting")

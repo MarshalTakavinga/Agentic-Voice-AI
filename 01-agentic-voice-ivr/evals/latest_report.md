@@ -26,6 +26,6 @@ Synthetic scripted scenarios against the rules NLU and mock adapters. This measu
   "pass_rate": 1.0,
   "escalated": 4,
   "avg_turns": 3.29,
-  "avg_agent_ms_per_turn": 4.01
+  "avg_agent_ms_per_turn": 4.61
 }
 ```

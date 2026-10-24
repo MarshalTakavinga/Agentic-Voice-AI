@@ -17,4 +17,6 @@ Open a private security advisory on the repository rather than a public issue.
 | A 4-digit PIN over voice is weak authentication | Shoulder-surfing, replay | ANI match + one-time passcode or voice biometrics as step-up |
 | Twilio webhooks don't yet de-duplicate retries | Repeated turn on network retry | Idempotency on (CallSid, sequence) |
 | No rate limiting | Resource exhaustion | API Gateway / WAF throttling in the AWS deployment |
+| LLM planner tested against a compromised-model simulation, not yet against live Claude at scale | A real model may phrase replies the grounding check rejects (safe but less helpful) | Run `--live` injection evals; review rejected-reply rate in traces |
+| Planner daily budget is per process | Several replicas multiply the cap | Milestone 3: shared budget counter in Redis |
 | Transcripts are not stored | (By design.) A real deployment needs a retention policy | Pair with the PII-redaction project in this portfolio |

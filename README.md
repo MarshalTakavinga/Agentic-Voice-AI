@@ -16,7 +16,7 @@ A portfolio of ten projects applying agentic AI to VoIP, IVR and contact-center 
 
 | # | Project | What it does | Tier | Status | Folder |
 |---|---|---|---|---|---|
-| 1 | **Agentic Voice IVR** | Conversational IVR that verifies callers, completes multi-step requests through guarded tool calls, and warm-transfers with context | Flagship | ✅ Milestone 1 built | [`01-agentic-voice-ivr/`](01-agentic-voice-ivr) |
+| 1 | **Agentic Voice IVR** | Conversational IVR that verifies callers, completes multi-step requests through guarded tool calls, and warm-transfers with context | Flagship | ✅ Milestones 1–2 built | [`01-agentic-voice-ivr/`](01-agentic-voice-ivr) |
 | 2 | **SIP Call Doctor** | Diagnoses one-way audio, NAT, codec, auth and quality faults from packet captures, with evidence-cited AI explanations | Flagship | ✅ Milestone 1 built | [`02-sip-call-doctor/`](02-sip-call-doctor) |
 | 3 | Voice Agent Evals | Regression and load testing: task completion, p95 latency, prompt-injection resistance | Advanced | Planned | [`03-voice-agent-evals/`](03-voice-agent-evals) |
 | 4 | Contact Center Copilot | Real-time agent assist with permission-aware cited RAG and after-call summaries | Flagship | Planned | [`04-contact-center-copilot/`](04-contact-center-copilot) |

@@ -2,7 +2,7 @@
 
 **Live:** [agentic-voice-ai.streamlit.app](https://agentic-voice-ai.streamlit.app)
 
-A Streamlit app that runs projects **01 (Agentic Voice IVR)** and **02 (SIP Call Doctor)** live in the browser. Everything runs in-process on synthetic data: no API keys, no cloud accounts, no real calls.
+A Streamlit app that runs projects **01 (Agentic Voice IVR)** and **02 (SIP Call Doctor)** live in the browser. Everything runs in-process on synthetic data with no cloud accounts and no real calls. An API key is optional: it enables the Claude planner (below).
 
 | Page | What you can do |
 |---|---|
@@ -22,6 +22,25 @@ A Streamlit app that runs projects **01 (Agentic Voice IVR)** and **02 (SIP Call
 Recordings are decoded with Python's standard `wave` module, so speech recognition doesn't depend on FFmpeg or PyAV versions. This is a browser simulation of a phone call. Project 01's Twilio webhooks are the path to a real phone number; see its README.
 
 Set `DEMO_STT_MODEL=tiny.en` for faster, less accurate recognition, or `DEMO_TTS_VOICE` to change the voice.
+
+## Optional: the Claude planner
+
+Without a key, the IVR is rules-only and free. With one, Claude Haiku 5.5 handles requests the rules can't understand. The page shows when Claude was used, the tokens, and the cost of each call.
+
+1. Create a key at https://platform.claude.com, and set a **monthly spend limit** in the Console. That limit is your hard ceiling.
+2. In Streamlit Cloud, open the app → **Settings → Secrets** and paste:
+
+   ```toml
+   ANTHROPIC_API_KEY = "sk-ant-..."
+   PLANNER_DAILY_BUDGET_USD = "0.50"    # optional; shared by all visitors
+   PLANNER_MAX_TURNS_PER_CALL = "6"     # optional
+   ```
+
+3. Save. The app restarts with the planner on.
+
+Never commit the key or paste it anywhere else. Locally, set `ANTHROPIC_API_KEY` as an environment variable instead.
+
+**What it costs.** A planned turn is about 1,000 input and 40 output tokens, which comes to roughly $0.0001–0.0002 on Haiku. Calls the rules understand cost nothing. Once the daily budget is used up, the app goes back to rules until the next day.
 
 ## Run locally
 
@@ -58,4 +77,4 @@ Free apps go to sleep after a period without visitors and wake up in under a min
 pytest demo/tests
 ```
 
-Headless tests drive the real app with Streamlit's `AppTest`. They dial a voice call and complete a verified balance check on the DTMF keypad (checking that each reply goes to speech), run text-chat calls and an escalation, and check that every sample capture's diagnosis matches its label. Unit tests cover WAV decoding and resampling, silence handling, the TTS fallback and script-safe escaping. The speech model and TTS service are stubbed in tests. The `demo` workflow runs these, boots the server, and audits dependencies on every change.
+Headless tests drive the real app with Streamlit's `AppTest`. They dial a voice call and complete a verified balance check on the DTMF keypad (checking that each reply goes to speech), run text-chat calls and an escalation, and check that every sample capture's diagnosis matches its label. Planner tests check the off state and a scripted Claude turn (no network), including the cost display. Unit tests cover WAV decoding and resampling, silence handling, the TTS fallback and script-safe escaping. The speech model and TTS service are stubbed in tests. The `demo` workflow runs these, boots the server, and audits dependencies on every change.

@@ -40,6 +40,8 @@ jobs:
         run: pytest --cov=app --cov-report=xml --cov-fail-under=90
       - name: Evals
         run: python scripts/run_evals.py --fail-under 1.0
+      - name: Prompt-injection evals (compromised model)
+        run: python scripts/run_injection_evals.py
       - uses: actions/upload-artifact@v4
         if: matrix.python-version == '3.13'
         with:
@@ -47,6 +49,7 @@ jobs:
           path: |
             01-agentic-voice-ivr/coverage.xml
             01-agentic-voice-ivr/evals/latest_report.md
+            01-agentic-voice-ivr/evals/injection_report.md
 
   security:
     runs-on: ubuntu-latest
