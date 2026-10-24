@@ -1,0 +1,84 @@
+name: 01-agentic-voice-ivr
+
+on:
+  push:
+    branches: [main]
+    paths: ["01-agentic-voice-ivr/**", ".github/workflows/ivr.yml"]
+  pull_request:
+    paths: ["01-agentic-voice-ivr/**", ".github/workflows/ivr.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ivr-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: 01-agentic-voice-ivr
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: 01-agentic-voice-ivr/requirements.lock
+      - name: Install
+        run: pip install -r requirements.lock && pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check . && ruff format --check .
+      - name: Tests
+        run: pytest --cov=app --cov-report=xml --cov-fail-under=90
+      - name: Evals
+        run: python scripts/run_evals.py --fail-under 1.0
+      - uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.13'
+        with:
+          name: ivr-reports
+          path: |
+            01-agentic-voice-ivr/coverage.xml
+            01-agentic-voice-ivr/evals/latest_report.md
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install bandit pip-audit
+      - name: SAST (bandit)
+        run: bandit -r app -ll
+      - name: Dependency audit (pip-audit)
+        run: pip-audit -r requirements.lock
+
+  container:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t svc:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name svc -p 8000:8000 -e IVR_API_KEY=ci-key svc:ci
+          for i in $(seq 1 20); do curl -fsS localhost:8000/health/ready && break; sleep 1; done
+          CALL=$(curl -fsS -X POST localhost:8000/v1/calls -H "X-API-Key: ci-key" | jq -r .call_id)
+          curl -fsS -X POST localhost:8000/v1/calls/$CALL/turns -H "X-API-Key: ci-key" \
+            -H 'content-type: application/json' -d '{"text":"is there an outage"}' | jq .
+      - name: Image scan (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: svc:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
