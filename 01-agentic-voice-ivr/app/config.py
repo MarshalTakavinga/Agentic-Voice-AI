@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     planner_max_turns_per_call: int = Field(default=8, ge=0, le=50)
     planner_daily_budget_usd: float = Field(default=1.0, ge=0)
 
+    # Shared state (Milestone 3). "memory" is single-process; "redis" lets replicas share
+    # sessions, lockout counters, webhook de-duplication and the planner budget.
+    state_backend: Literal["memory", "redis"] = "memory"
+    redis_url: SecretStr = SecretStr("redis://localhost:6379/0")
+    lockout_max_failures: int = Field(default=5, ge=1, le=20)  # per account, across calls
+    lockout_window_s: int = Field(default=900, ge=60)
+
     # Conversation policy.
     max_auth_attempts: int = Field(default=3, ge=1, le=5)
     max_no_match: int = Field(default=3, ge=1, le=5)

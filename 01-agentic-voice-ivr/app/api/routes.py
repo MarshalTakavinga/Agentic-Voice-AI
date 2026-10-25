@@ -30,14 +30,18 @@ def live() -> dict[str, str]:
 @ops.get("/health/ready", summary="Readiness probe (checks downstream adapters)")
 def ready(request: Request, response: Response) -> dict[str, str]:
     try:
-        ok = request.app.state.system.ping()
+        system_ok = request.app.state.system.ping()
     except Exception:  # noqa: BLE001 - readiness must never raise
-        ok = False
+        system_ok = False
+    state_ok = request.app.state.kv.ping()  # sessions live here; without it no turn can run
+    ok = system_ok and state_ok
     if not ok:
         response.status_code = 503
     return {
         "status": "ready" if ok else "degraded",
         "nlu_provider": request.app.state.settings.nlu_provider,
+        "state_backend": request.app.state.settings.state_backend,
+        "state_store": "ok" if state_ok else "unavailable",
     }
 
 

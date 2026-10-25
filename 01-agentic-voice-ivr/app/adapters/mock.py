@@ -35,6 +35,7 @@ class MockCustomerSystem:
         self._by_account = {c.account_number: c for c in self._customers.values()}
         self._outages = {o["zip"]: Outage(**o) for o in outages}
         self._booked: dict[str, Appointment] = {}
+        self._by_idempotency_key: dict[str, Appointment] = {}
         self._today = today
         self._lock = threading.Lock()
         self._seq = itertools.count(100001)
@@ -77,9 +78,16 @@ class MockCustomerSystem:
                 )
         return slots
 
-    def book(self, customer_id: str, slot_id: str) -> Appointment:
+    def book(
+        self, customer_id: str, slot_id: str, idempotency_key: str | None = None
+    ) -> Appointment:
         customer = self.get_customer(customer_id)
         with self._lock:
+            replay = self._by_idempotency_key.get(idempotency_key or "")
+            if replay is not None:
+                if replay.customer_id != customer_id or replay.slot.slot_id != slot_id:
+                    raise DomainError("idempotency_key_reused")
+                return replay
             available = {s.slot_id: s for s in self.list_slots(customer.service_zip, None)}
             slot = available.get(slot_id)
             if slot is None:
@@ -88,6 +96,8 @@ class MockCustomerSystem:
                 confirmation=f"NW{next(self._seq)}", customer_id=customer_id, slot=slot
             )
             self._booked[slot_id] = appt
+            if idempotency_key:
+                self._by_idempotency_key[idempotency_key] = appt
             return appt
 
     def create_handoff(self, queue: str, reason: str, context: dict) -> Handoff:

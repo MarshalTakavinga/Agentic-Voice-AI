@@ -10,6 +10,7 @@ account or book an appointment without consent, however it is prompted.
 
 from __future__ import annotations
 
+import hashlib
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -19,7 +20,8 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.adapters.base import CustomerSystem, DomainError, UpstreamError
 from app.adapters.mock import verify_pin
-from app.observability import TOOL_CALLS, TOOL_LATENCY, log, tracer
+from app.kv import KV, InMemoryKV
+from app.observability import AUTH_LOCKOUTS, TOOL_CALLS, TOOL_LATENCY, log, tracer
 
 
 class ToolContext(BaseModel):
@@ -150,13 +152,36 @@ class TransferIn(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
 
 
-def build_registry(system: CustomerSystem) -> ToolRegistry:
+def lockout_key(account_number: str) -> str:
+    # Hashed so the shared store never holds account numbers in clear.
+    digest = hashlib.sha256(f"ivr-lockout:{account_number}".encode()).hexdigest()[:32]
+    return f"ivr:authfail:{digest}"
+
+
+def build_registry(
+    system: CustomerSystem,
+    kv: KV | None = None,
+    lockout_max_failures: int = 5,
+    lockout_window_s: int = 900,
+) -> ToolRegistry:
+    """``kv`` holds per-account failure counters. Share it (Redis) across replicas so the
+    lockout spans calls and servers; the per-call attempt limit lives in the agent."""
     reg = ToolRegistry()
+    kv = kv or InMemoryKV()
 
     def verify_caller(p: VerifyCallerIn, _ctx: ToolContext) -> dict[str, Any]:
+        key = lockout_key(p.account_number)
+        if int(kv.get(key) or 0) >= lockout_max_failures:
+            AUTH_LOCKOUTS.inc()
+            log.warning("auth_locked_out")  # no identifiers in logs
+            # The PIN is not even checked while locked, so guessing gains nothing.
+            return {"verified": False, "locked": True}
         customer = system.get_customer_by_account(p.account_number)
         if customer is None or not verify_pin(customer, p.pin):
-            return {"verified": False}  # identical response: no account enumeration
+            # Unknown accounts count too, so lockout reveals nothing about which accounts exist.
+            failures = kv.incr(key, lockout_window_s)
+            return {"verified": False, "locked": failures >= lockout_max_failures}
+        kv.delete(key)
         return {
             "verified": True,
             "customer_id": customer.customer_id,
@@ -183,8 +208,9 @@ def build_registry(system: CustomerSystem) -> ToolRegistry:
         slots = system.list_slots(c.service_zip, p.preferred_day)[:3]
         return {"slots": [{"slot_id": s.slot_id, "label": s.label} for s in slots]}
 
-    def book_visit(p: BookVisitIn, _ctx: ToolContext) -> dict[str, Any]:
-        appt = system.book(p.customer_id, p.slot_id)
+    def book_visit(p: BookVisitIn, ctx: ToolContext) -> dict[str, Any]:
+        # One booking per call and slot, even if the turn is retried after a crash.
+        appt = system.book(p.customer_id, p.slot_id, idempotency_key=f"{ctx.call_id}:{p.slot_id}")
         return {"confirmation": appt.confirmation, "label": appt.slot.label}
 
     def transfer(p: TransferIn, _ctx: ToolContext) -> dict[str, Any]:

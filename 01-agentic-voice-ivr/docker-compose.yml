@@ -1,17 +1,40 @@
-# Local stack: IVR API + Prometheus. Optional Ollama for free local LLM NLU:
+# Local stack: IVR API + Redis (shared state) + Prometheus.
+# A second replica sharing the same Redis:  docker compose --profile scale up   (ports 8000, 8001)
+# Optional Ollama for free local LLM NLU:
 #   docker compose --profile llm up
 #   then set IVR_NLU_PROVIDER=openai_compatible and IVR_LLM_BASE_URL=http://ollama:11434/v1
 services:
-  ivr:
+  ivr: &ivr
     build: .
     image: agentic-voice-ivr:local
     env_file: [.env]
+    environment:
+      IVR_STATE_BACKEND: redis
+      IVR_REDIS_URL: redis://redis:6379/0
     ports: ["8000:8000"]
     read_only: true
     tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  ivr-replica:
+    <<: *ivr
+    profiles: [scale]
+    ports: ["8001:8000"]
+
+  redis:
+    image: redis:7.4-alpine
+    # Sessions are short-lived; no persistence. Production: managed Redis with TLS and AUTH.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 15
+    security_opt: ["no-new-privileges:true"]
 
   prometheus:
     image: prom/prometheus:v2.55.1

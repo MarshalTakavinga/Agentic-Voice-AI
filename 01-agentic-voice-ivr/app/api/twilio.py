@@ -87,7 +87,11 @@ async def gather(request: Request) -> Response:
     voice = request.app.state.settings.tts_voice
     utterance = form.get("SpeechResult") or form.get("Digits") or ""
     try:
-        state = await run_in_threadpool(service.take_turn, form.get("CallSid", ""), utterance)
+        # Twilio marks retries of the same webhook with this header; replay instead of re-running.
+        token = request.headers.get("i-twilio-idempotency-token") or None
+        state = await run_in_threadpool(
+            service.take_turn, form.get("CallSid", ""), utterance, token
+        )
     except (CallNotFound, CallEnded):
         return _twiml(
             build_twiml(

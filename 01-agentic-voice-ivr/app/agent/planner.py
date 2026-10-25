@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import json
 import re
-import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
 
+from app.kv import KV, InMemoryKV
 from app.observability import log
 from app.tools import ToolContext, ToolRegistry
 
@@ -168,37 +168,28 @@ def cost_usd(model: str, usage: dict[str, int]) -> float:
 
 
 class Budget:
-    """Process-wide daily spend cap. When exhausted, the IVR silently uses rules only."""
+    """Daily spend cap on the shared key-value port. With ``RedisKV`` every replica draws on one
+    counter; with the default in-memory KV it is per process. When exhausted, the IVR silently
+    uses rules only."""
 
-    def __init__(self, daily_usd: float, clock=time.time) -> None:
+    def __init__(self, daily_usd: float, clock=time.time, kv: KV | None = None) -> None:
         self.daily_usd = daily_usd
         self._clock = clock
-        self._day = self._today()
-        self._spent = 0.0
-        self._lock = threading.Lock()
+        self._kv = kv or InMemoryKV()
 
-    def _today(self) -> int:
-        return int(self._clock() // 86_400)
-
-    def _roll(self) -> None:
-        if (day := self._today()) != self._day:
-            self._day, self._spent = day, 0.0
+    def _key(self) -> str:
+        return f"ivr:planner:spend:{int(self._clock() // 86_400)}"  # UTC day number
 
     def available(self) -> bool:
-        with self._lock:
-            self._roll()
-            return self._spent < self.daily_usd
+        return self.spent_today < self.daily_usd
 
     def spend(self, usd: float) -> None:
-        with self._lock:
-            self._roll()
-            self._spent += usd
+        if usd > 0:
+            self._kv.incr_float(self._key(), usd, 2 * 86_400)
 
     @property
     def spent_today(self) -> float:
-        with self._lock:
-            self._roll()
-            return self._spent
+        return float(self._kv.get(self._key()) or 0.0)
 
 
 # ------------------------------------------------------------------ planner

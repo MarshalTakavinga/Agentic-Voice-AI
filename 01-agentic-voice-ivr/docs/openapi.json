@@ -3,7 +3,7 @@
   "info": {
     "title": "Agentic Voice IVR",
     "description": "\nAgentic conversational IVR for a (fictional) fiber ISP, Northwind Fiber.\n\n* **/v1** \u2013 JSON API used by the simulator, eval harness and other services (`X-API-Key`).\n* **/voice/twilio** \u2013 Twilio Programmable Voice webhooks returning TwiML (signature-validated).\n\nAll enterprise systems are **simulated** with synthetic data. See the README for which\nintegrations are live-tested and which are not.\n",
-    "version": "0.1.0"
+    "version": "0.3.0"
   },
   "paths": {
     "/health/live": {

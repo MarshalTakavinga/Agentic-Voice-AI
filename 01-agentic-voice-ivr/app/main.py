@@ -16,14 +16,21 @@ from app.adapters.mock import MockCustomerSystem
 from app.agent.graph import IVRAgent
 from app.api import routes, twilio
 from app.config import Settings, get_settings
+from app.kv import KV, InMemoryKV, RedisKV
 from app.nlu import build_nlu
 from app.observability import configure_logging, configure_tracing, log
 from app.service import CallEnded, CallNotFound, CallService
-from app.sessions import InMemorySessionStore
+from app.sessions import KVSessionStore
 from app.tools import build_registry
 
 
-def build_planner(settings: Settings, registry, client=None, budget=None):
+def build_kv(settings: Settings) -> KV:
+    if settings.state_backend == "redis":
+        return RedisKV.from_url(settings.redis_url.get_secret_value())
+    return InMemoryKV()
+
+
+def build_planner(settings: Settings, registry, client=None, budget=None, kv: KV | None = None):
     """Return a Claude planner when enabled and keyed (or given a client), else None.
     Pass a shared ``budget`` so several app instances draw on one daily spend cap."""
     key = settings.anthropic_api_key.get_secret_value()
@@ -34,7 +41,7 @@ def build_planner(settings: Settings, registry, client=None, budget=None):
     return Planner(
         client or AnthropicClient(key, settings.planner_model, settings.planner_timeout_s),
         registry,
-        budget or Budget(settings.planner_daily_budget_usd),
+        budget or Budget(settings.planner_daily_budget_usd, kv=kv),
         max_tokens=settings.planner_max_tokens,
         max_turns_per_call=settings.planner_max_turns_per_call,
     )
@@ -54,23 +61,27 @@ integrations are live-tested and which are not.
 
 
 def create_app(
-    settings: Settings | None = None, system: CustomerSystem | None = None, planner_budget=None
+    settings: Settings | None = None,
+    system: CustomerSystem | None = None,
+    planner_budget=None,
+    kv: KV | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
     configure_tracing(settings.otel_console_exporter)
 
     system = system or MockCustomerSystem(settings.data_dir)
-    registry = build_registry(system)
-    agent = IVRAgent(
-        build_nlu(settings), registry, settings, planner=build_planner(settings, registry)
-    )
-    service = CallService(agent, InMemorySessionStore(ttl_s=settings.session_ttl_s))
+    kv = kv or build_kv(settings)
+    registry = build_registry(system, kv, settings.lockout_max_failures, settings.lockout_window_s)
+    planner = build_planner(settings, registry, budget=planner_budget, kv=kv)
+    agent = IVRAgent(build_nlu(settings), registry, settings, planner=planner)
+    service = CallService(agent, KVSessionStore(kv, ttl_s=settings.session_ttl_s))
 
     app = FastAPI(title="Agentic Voice IVR", version=__version__, description=DESCRIPTION)
     app.state.settings = settings
     app.state.system = system
     app.state.service = service
+    app.state.kv = kv
     app.include_router(routes.ops)
     app.include_router(routes.v1)
     app.include_router(twilio.router)

@@ -4,7 +4,7 @@
 
 [![ci](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/ivr.yml/badge.svg)](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/ivr.yml)
 ![python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)
-![status](https://img.shields.io/badge/status-milestone%202%20of%205-orange)
+![status](https://img.shields.io/badge/status-milestone%203%20of%205-orange)
 
 Project 01 of the [**Agentic Voice AI**](../README.md) portfolio. Runs entirely on a laptop with no paid accounts.
 
@@ -76,6 +76,37 @@ python scripts/run_injection_evals.py          # free, offline
 python scripts/run_injection_evals.py --live   # a few cents at most on Haiku
 ```
 
+## Running several replicas (Milestone 3)
+
+Set `IVR_STATE_BACKEND=redis` and every replica shares state through Redis, so any replica can take any turn of any call and the load balancer needs no sticky sessions.
+
+| Shared state | What it does |
+|---|---|
+| **Sessions** | JSON in Redis with a sliding TTL (`IVR_SESSION_TTL_S`). Credentials are never persisted: the PIN leaves state the moment it's checked, and the NLU echo is redacted. |
+| **Per-call turn lock** | Turns of one call are serialized across replicas (`SET NX PX` with a random token, released with `WATCH`/`MULTI`, no Lua), so a retry racing the original can't lose an update. |
+| **Webhook retries** | Twilio marks retries with `I-Twilio-Idempotency-Token`. A repeated token gets the stored result of that turn, not a second run. |
+| **Per-account lockout** | Failed PINs are counted per account across calls and replicas (default 5 in 15 min). While locked, the PIN isn't even checked and the caller goes to a human. Unknown accounts are counted too, so the response never reveals whether an account exists. Redis keys hold a hash, never the account number. |
+| **Idempotent bookings** | Each booking carries `call_id:slot_id` as an idempotency key to the system of record, so a re-run after a crash returns the original confirmation instead of double-booking. |
+| **Planner budget** | One daily spend counter for every replica. |
+
+`/health/ready` returns 503 when Redis is unreachable, so the load balancer drains a replica that can't see shared state.
+
+**Load test.** `scripts/load_test.py` runs concurrent verified balance calls (4 requests each) and sends each turn to the next replica round-robin. Measured in this repo's 2-vCPU build sandbox, with client, servers and Redis on one machine:
+
+| Setup | Replicas | Calls | Concurrency | Completed correctly | Failures | Requests/s | p50 ms | p95 ms | p99 ms |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 replica, in-memory state (baseline) | 1 | 500 | 50 | 500/500 | — | 206 | 229.6 | 373.1 | 478.5 |
+| 1 replica, Redis state | 1 | 500 | 50 | 500/500 | — | 178 | 261.0 | 423.2 | 499.9 |
+| 2 replicas, shared Redis state | 2 | 500 | 50 | 500/500 | — | 198 | 241.7 | 435.1 | 542.1 |
+| 2 replicas, in-memory state (no sharing — expected to fail) | 2 | 500 | 50 | 0/500 | {'http_404': 500} | 302 | 119.2 | 398.6 | 552.9 |
+
+The last row is the control: without shared state, a call breaks as soon as a turn reaches the other replica. Throughput here is limited by the shared 2 vCPUs and by deliberately slow PIN hashing (PBKDF2, 100k iterations). The test shows correctness across replicas, not production capacity. CI repeats the two-replica run against a real Redis 7 service on every change (`multi-replica` job).
+
+```bash
+make scale        # docker compose: Redis + two replicas on :8000 and :8001
+make load
+```
+
 ## Architecture
 
 ```mermaid
@@ -89,7 +120,7 @@ flowchart LR
     subgraph Service["agentic-voice-ivr (FastAPI)"]
         TWR --> CS["CallService"]
         API --> CS
-        CS <--> SS[("Session store<br/>in-memory → Redis")]
+        CS <--> SS[("Shared state<br/>in-memory or Redis")]
         CS --> AG["IVRAgent<br/>LangGraph state machine"]
         AG --> NLU["NLU provider<br/>rules | Ollama/OpenAI | Bedrock"]
         AG --> TR["Tool registry<br/>auth · binding · consent · audit"]
@@ -211,9 +242,10 @@ curl -s -X POST localhost:8000/v1/calls/$CALL/turns -H "X-API-Key: $KEY" \
 
 | Component | Status | Evidence |
 |---|---|---|
-| Conversation engine, tool registry, guardrails | **Implemented & tested** | 114 tests, 14 eval scenarios, 8 injection attacks, CI |
+| Conversation engine, tool registry, guardrails | **Implemented & tested** | 131 tests, 14 eval scenarios, 8 injection attacks, multi-replica load test, CI |
 | FastAPI service under uvicorn | **Implemented & tested** | HTTP smoke test in CI container job |
 | Rules NLU (speech text + DTMF) | **Implemented & tested** | `tests/test_nlu.py` |
+| Shared state on Redis (sessions, turn lock, lockout, retry de-duplication, budget) | **Implemented & tested** | `tests/test_shared_state.py` against fakeredis and a real Redis server; two-replica load test in CI |
 | Twilio webhook contract & signature validation | **Simulated** | TwiML shape tests; signature algorithm matches Twilio's official `RequestValidator` on a reference vector. Not yet run against a live Twilio number. |
 | OpenAI-compatible LLM NLU (Ollama / OpenAI / vLLM) | **Simulated** | Tested with a mocked HTTP transport; not benchmarked against a live model |
 | Claude planner (Messages API tool calling, Haiku 5.5) | **Simulated** | Tested with a scripted fake that returns the documented response shape, plus a compromised-model injection suite. Run `--live` and update this row once tested against the real API. |
@@ -250,7 +282,7 @@ Mapped to NIST SP 800-53 control families **for discussion only** — this is no
 
 | Control intent | Implementation |
 |---|---|
-| IA — identify and authenticate the caller | Account + PIN, PBKDF2-SHA256 hashed with per-record salt, constant-time compare, attempt limit then human handoff |
+| IA — identify and authenticate the caller | Account + PIN, PBKDF2-SHA256 hashed with per-record salt, constant-time compare, per-call attempt limit and per-account lockout across calls, then human handoff |
 | AC — least privilege, access enforcement | Tool-level auth, customer binding, consent for side effects; API key on `/v1`; Twilio HMAC-SHA1 signature on webhooks |
 | AU — audit | Per-call tool audit trail; structured logs with request IDs |
 | SC / SI — protect data, validate input | 500-char utterance cap, schema-validated tool args, XML-escaped TwiML, malformed request IDs replaced |
@@ -270,7 +302,9 @@ app/
   nlu/                rules, OpenAI-compatible and Bedrock providers
   adapters/           CustomerSystem port + mock implementation
   api/                JSON API, Twilio webhooks, schemas
-  service.py          Channel-agnostic call service
+  service.py          Channel-agnostic call service (turn lock, retry replay)
+  kv.py               Shared-state port: in-memory and Redis
+  sessions.py         Session store on the KV port
   observability.py    Logging with redaction, metrics, tracing
   evals.py            Scenario runner shared by pytest and the CLI
 evals/scenarios.json  14 conversation scenarios
@@ -283,8 +317,8 @@ scripts/              simulator, eval report, synthetic data generator
 | Milestone | Scope | Status |
 |---|---|---|
 | **1. Guarded conversational core** | LangGraph agent, tool registry, rules + LLM NLU, Twilio webhooks, JSON API, evals, CI | ✅ done |
-| **2. LLM planner with tool calling** | Claude plans turns the rules can't map, using least-privilege tools inside the same registry guardrails; grounded replies; cost budget; prompt-injection eval set | ✅ this release |
-| 3. Horizontal scale | Redis session store, per-account verification lockout across calls, idempotent bookings, k6 load test | Planned |
+| **2. LLM planner with tool calling** | Claude plans turns the rules can't map, using least-privilege tools inside the same registry guardrails; grounded replies; cost budget; prompt-injection eval set | ✅ done |
+| **3. Horizontal scale** | Redis session store, per-call turn lock, per-account lockout across calls, webhook retry de-duplication, idempotent bookings, shared budget, multi-replica load test | ✅ this release |
 | 4. Contact-center integration | Amazon Connect contact flow + Lex V2 code hook (Lambda) as a second channel; Genesys Cloud Architect data action; real-time handoff into an agent desktop | Planned |
 | 5. Streaming voice | Twilio Media Streams / WebRTC with streaming ASR and TTS, barge-in, latency budget per turn | Planned |
 

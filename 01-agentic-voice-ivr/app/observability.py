@@ -84,6 +84,12 @@ TOOL_LATENCY = Histogram(
     "ivr_tool_latency_seconds", "Tool execution time", ["tool"], buckets=_LATENCY_BUCKETS
 )
 CALL_OUTCOMES = Counter("ivr_call_outcomes_total", "Terminal call outcomes", ["outcome"])
+TURN_REPLAYS = Counter(
+    "ivr_turn_replays_total", "Webhook retries answered from the stored turn instead of re-running"
+)
+AUTH_LOCKOUTS = Counter(
+    "ivr_auth_lockouts_total", "Verification attempts refused because the account is locked"
+)
 NLU_FALLBACKS = Counter(
     "ivr_nlu_fallbacks_total", "LLM NLU failures that fell back to rules", ["provider"]
 )

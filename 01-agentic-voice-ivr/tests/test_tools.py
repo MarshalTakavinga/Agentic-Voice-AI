@@ -18,7 +18,7 @@ def test_verify_caller_success_and_uniform_failure(registry):
     wrong_pin = registry.call("verify_caller", {"account_number": "10000001", "pin": "0000"}, ANON)
     no_account = registry.call("verify_caller", {"account_number": "19999999", "pin": "0000"}, ANON)
     # Same response whether the account exists or not: no enumeration oracle.
-    assert wrong_pin.data == no_account.data == {"verified": False}
+    assert wrong_pin.data == no_account.data == {"verified": False, "locked": False}
 
 
 def test_invalid_arguments_rejected(registry):
@@ -44,8 +44,12 @@ def test_side_effect_requires_confirmation(registry):
     confirmed = AVA.model_copy(update={"confirmed": True})
     booked = registry.call("book_technician_visit", args, confirmed)
     assert booked.ok and booked.data["confirmation"].startswith("NW")
-    # The same window cannot be double-booked.
-    assert registry.call("book_technician_visit", args, confirmed).error == "slot_unavailable"
+    # A retry within the same call is idempotent: same appointment, not a second booking.
+    again = registry.call("book_technician_visit", args, confirmed)
+    assert again.ok and again.data["confirmation"] == booked.data["confirmation"]
+    # Another call cannot double-book the window.
+    other_call = confirmed.model_copy(update={"call_id": "other"})
+    assert registry.call("book_technician_visit", args, other_call).error == "slot_unavailable"
 
 
 def test_slots_skip_weekends_and_honor_preferred_day(registry):

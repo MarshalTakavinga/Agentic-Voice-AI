@@ -250,3 +250,10 @@ def test_changed_project_code_is_reloaded_without_reboot():
         assert sys.modules["app.main"] is not stale  # fresh code was imported, no reboot needed
     finally:
         os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+
+def test_home_lists_all_ten_projects():
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption)
+    assert "10 · Smart Call Router" in text and text.count("Planned") == 8

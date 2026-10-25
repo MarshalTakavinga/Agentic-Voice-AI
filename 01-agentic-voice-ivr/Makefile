@@ -1,4 +1,4 @@
-.PHONY: install run test lint fmt security evals simulate openapi data docker up down
+.PHONY: install run test lint fmt security evals injection load simulate openapi data docker up scale down
 
 install:
 	pip install -r requirements.lock && pip install -e ".[dev]"
@@ -21,6 +21,13 @@ security:
 evals:
 	python scripts/run_evals.py
 
+injection:
+	python scripts/run_injection_evals.py
+
+# Needs two replicas running against one Redis (make scale).
+load:
+	python scripts/load_test.py --targets http://localhost:8000,http://localhost:8001 --calls 500 --concurrency 50
+
 simulate:
 	python scripts/simulate_call.py
 
@@ -36,6 +43,10 @@ docker:
 up:
 	cp -n .env.example .env || true
 	docker compose up --build -d
+
+scale:
+	cp -n .env.example .env || true
+	docker compose --profile scale up --build -d
 
 down:
 	docker compose down

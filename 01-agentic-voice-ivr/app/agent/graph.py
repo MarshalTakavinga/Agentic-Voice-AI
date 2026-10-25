@@ -48,6 +48,9 @@ GREETING = (
 ANYTHING_ELSE = "Is there anything else I can help you with?"
 
 
+SENSITIVE_ENTITIES = frozenset({"account_number", "pin"})
+
+
 class IVRState(TypedDict, total=False):
     call_id: str
     channel: str
@@ -139,6 +142,17 @@ class IVRAgent:
             span.set_attribute("ivr.intent", result["nlu"]["intent"])
             span.set_attribute("ivr.status", result["status"])
         result.pop("utterance", None)  # never persist raw caller speech in session state
+        # The NLU echo is kept for observability only; credentials in it must not be persisted
+        # (sessions may live in a shared store). Slots keep what the workflow still needs.
+        nlu = result.get("nlu") or {}
+        if nlu.get("entities"):
+            result["nlu"] = {
+                **nlu,
+                "entities": {
+                    k: ("[redacted]" if k in SENSITIVE_ENTITIES else v)
+                    for k, v in nlu["entities"].items()
+                },
+            }
         result["last_reply"] = result["response"]
         TURN_LATENCY.observe(time.perf_counter() - started)
         TURNS.labels(result["nlu"]["intent"], state.get("channel", "api")).inc()
@@ -329,6 +343,8 @@ class IVRAgent:
                 "response": _say(s, f"Thanks, {first}, you're verified."),
             }
         attempts = s.get("auth_attempts", 0) + 1
+        if result.data.get("locked"):  # too many failures for this account across calls
+            attempts = max(attempts, self.settings.max_auth_attempts)
         if attempts >= self.settings.max_auth_attempts:
             return {
                 "auth_attempts": attempts,
