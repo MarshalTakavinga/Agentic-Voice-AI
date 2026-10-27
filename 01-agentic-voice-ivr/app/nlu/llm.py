@@ -59,7 +59,7 @@ class GuardedLLMNLU:
             return baseline.model_copy(update={"source": "rules_fallback"})
         if confidence < self._min_confidence:
             return baseline.model_copy(update={"source": "rules_low_confidence"})
-        entities = extract_entities(normalize(utterance), expecting)
+        entities = extract_entities(normalize(utterance, expecting), expecting)
         return NLUResult(intent=intent, confidence=confidence, entities=entities, source=self.name)
 
 

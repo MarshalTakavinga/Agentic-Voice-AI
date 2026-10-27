@@ -61,7 +61,7 @@ class RulesNLU:
     name = "rules"
 
     def parse(self, utterance: str, expecting: str | None = None) -> NLUResult:
-        text = normalize(utterance)
+        text = normalize(utterance, expecting)
         entities = extract_entities(text, expecting)
         if expecting is None and text in _DTMF:
             return NLUResult(intent=_DTMF[text], confidence=1.0, source="dtmf")  # type: ignore[arg-type]

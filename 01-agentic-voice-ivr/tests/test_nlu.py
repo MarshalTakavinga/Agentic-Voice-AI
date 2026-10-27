@@ -146,3 +146,43 @@ def test_bedrock_converse_tool_use_parsed():
 def test_bedrock_without_tool_use_falls_back():
     stub = _StubBedrock({"output": {"message": {"content": [{"text": "hmm"}]}}})
     assert BedrockNLU("m", "us-east-1", client=stub).parse("balance").source == "rules_fallback"
+
+
+# Found by 03-voice-agent-evals' ASR-noise profiles (oh_for_zero, fillers, homophones).
+@pytest.mark.parametrize(
+    ("utterance", "expecting", "normalized"),
+    [
+        ("one oh oh oh oh oh oh one", None, "10000001"),
+        ("oh oh oh oh", "pin", "0000"),
+        ("um yes hmm please", None, "yes please"),
+        ("uh one uh two three four", "pin", "1234"),
+        ("won to three for", "pin", "1234"),
+        ("won zero zero zero zero zero zero to", "account_number", "10000002"),
+        ("six zero six won for", "zip", "60614"),
+        ("seven three three zero won", "zip", "73301"),
+    ],
+)
+def test_normalize_recognizer_variants(utterance, expecting, normalized):
+    assert normalize(utterance, expecting) == normalized
+
+
+@pytest.mark.parametrize(
+    ("utterance", "expecting", "normalized"),
+    [
+        ("is there an outage for 60614", None, "is there an outage for 60614"),
+        ("outage for seven three three zero one", "zip", "outage for 73301"),
+        ("i want to check my balance", None, "i want to check my balance"),
+        ("oh, i want my balance", None, "oh, i want my balance"),
+        ("i need to talk to someone", "pin", "i need to talk to someone"),
+    ],
+)
+def test_ambiguous_words_stay_words_outside_identifiers(utterance, expecting, normalized):
+    assert normalize(utterance, expecting) == normalized
+
+
+def test_homophone_pin_in_one_utterance_with_account():
+    text = normalize(
+        "my account number is won zero zero zero zero zero zero to and my pin is for three to won",
+        "account_number",
+    )
+    assert extract_entities(text, "account_number") == {"account_number": "10000002", "pin": "4321"}
