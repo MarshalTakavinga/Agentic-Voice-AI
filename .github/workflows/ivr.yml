@@ -126,7 +126,7 @@ jobs:
           curl -fsS -X POST localhost:8000/v1/calls/$CALL/turns -H "X-API-Key: ci-key" \
             -H 'content-type: application/json' -d '{"text":"is there an outage"}' | jq .
       - name: Image scan (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: svc:ci
           severity: CRITICAL,HIGH
