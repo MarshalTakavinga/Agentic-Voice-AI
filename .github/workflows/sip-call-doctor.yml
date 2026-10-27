@@ -76,7 +76,7 @@ jobs:
             -F capture=@captures/nat_one_way_audio.pcap | jq -r '.calls[0].root_cause' \
             | grep -qx media_to_private_address
       - name: Image scan (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: svc:ci
           severity: CRITICAL,HIGH

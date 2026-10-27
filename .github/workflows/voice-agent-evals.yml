@@ -139,7 +139,7 @@ jobs:
       - name: Compose (IVR + evals in containers)
         run: docker compose up --build --abort-on-container-exit --exit-code-from evals
       - name: Image scan (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: vae:ci
           severity: CRITICAL,HIGH
