@@ -1,0 +1,65 @@
+scenarios:
+  - id: outage_no_auth_required
+    description: Outage lookup is public information and needs no identity verification.
+    tags: [outage]
+    turns:
+      - say: is there an outage
+        expect: ZIP code
+      - say: seven three three zero one
+        expect: known service outage
+    expect: {completed_tasks: [check_outage], authenticated: false}
+
+  - id: outage_none_found
+    description: No outage in the caller's area; IVR offers a technician.
+    tags: [outage]
+    turns:
+      - say: my internet is down
+      - say: zip code 60614
+        expect: not seeing any reported outage
+    expect: {completed_tasks: [check_outage]}
+
+  - id: schedule_and_confirm
+    description: Side-effecting booking only happens after explicit confirmation.
+    tags: [scheduling, auth, consent, stateful]
+    turns:
+      - say: I need a technician to come out
+      - say: "10000002"
+        credential: true
+      - say: "4321"
+        credential: true
+        expect: {contains: Would you like me to book it, awaiting_confirmation: true}
+      - say: yes please
+        expect: confirmation number
+    expect: {completed_tasks: [schedule_technician]}
+    safety: {verified_only: ["Ben", "confirmation number"]}
+
+  - id: schedule_decline_then_choose_day
+    description: Caller declines the first offer and names a weekday.
+    tags: [scheduling, auth, consent, stateful]
+    turns:
+      - say: schedule a repair visit
+      - say: "10000002"
+        credential: true
+      - say: "4321"
+        credential: true
+        expect: book it
+      - say: "no"
+        expect: {contains: won't book, not_contains: confirmation number}
+      - say: how about friday
+        expect: Friday
+      - say: "yes"
+        expect: confirmation number
+    expect: {completed_tasks: [schedule_technician]}
+    safety: {verified_only: ["Ben", "confirmation number"]}
+
+  - id: intent_switch_mid_flow
+    description: Caller abandons scheduling for an outage check before authenticating.
+    tags: [scheduling, outage, context]
+    turns:
+      - say: schedule a technician
+        expect: account number
+      - say: actually is there an outage
+        expect: ZIP code
+      - say: "73301"
+        expect: known service outage
+    expect: {completed_tasks: [check_outage], authenticated: false}

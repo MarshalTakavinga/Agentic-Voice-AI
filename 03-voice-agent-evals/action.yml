@@ -1,0 +1,95 @@
+name: Voice Agent Evals
+description: >
+  Run a voice-agent eval suite (scripted conversations, ASR-noise variants, prompt-injection and
+  policy checks) against an agent that implements the turn API, and gate the build on the result.
+branding:
+  icon: phone-call
+  color: blue
+
+inputs:
+  suite:
+    description: Path to suite.yaml or the directory containing it
+    required: true
+  base-url:
+    description: URL of the running agent (omit when using `app`)
+    required: false
+    default: ""
+  app:
+    description: ASGI app to evaluate in-process, e.g. "app.main:create_app()"
+    required: false
+    default: ""
+  app-path:
+    description: Directory to put on sys.path for `app`
+    required: false
+    default: "."
+  isolate:
+    description: Fresh in-process agent per call (needs an app factory)
+    required: false
+    default: "false"
+  api-key:
+    description: The agent's API key (pass a secret)
+    required: false
+    default: ""
+  profiles:
+    description: Comma-separated ASR-noise profiles; empty string for none; "suite" for the suite's own
+    required: false
+    default: suite
+  gate:
+    description: Fail the step if a gate fails
+    required: false
+    default: "true"
+  baseline:
+    description: Optional baseline results JSON; the step fails if the run regressed against it
+    required: false
+    default: ""
+  report:
+    description: Where to write the Markdown report
+    required: false
+    default: vae-report.md
+  results:
+    description: Where to write the JSON results
+    required: false
+    default: vae-results.json
+
+outputs:
+  report:
+    description: Path of the Markdown report
+    value: ${{ inputs.report }}
+  results:
+    description: Path of the JSON results
+    value: ${{ inputs.results }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install voice-agent-evals
+      shell: bash
+      run: pip install -q -r "${{ github.action_path }}/requirements.lock" && pip install -q --no-deps "${{ github.action_path }}"
+    - name: Run suite
+      shell: bash
+      env:
+        VAE_API_KEY: ${{ inputs.api-key }}
+        IN_SUITE: ${{ inputs.suite }}
+        IN_BASE_URL: ${{ inputs.base-url }}
+        IN_APP: ${{ inputs.app }}
+        IN_APP_PATH: ${{ inputs.app-path }}
+        IN_ISOLATE: ${{ inputs.isolate }}
+        IN_PROFILES: ${{ inputs.profiles }}
+        IN_GATE: ${{ inputs.gate }}
+        IN_REPORT: ${{ inputs.report }}
+        IN_RESULTS: ${{ inputs.results }}
+      run: |
+        args=(run "$IN_SUITE" --api-key-env VAE_API_KEY --out "$IN_RESULTS" --report "$IN_REPORT" --step-summary)
+        if [ -n "$IN_APP" ]; then args+=(--app "$IN_APP" --app-path "$IN_APP_PATH"); fi
+        if [ -n "$IN_BASE_URL" ]; then args+=(--base-url "$IN_BASE_URL"); fi
+        if [ "$IN_ISOLATE" = "true" ]; then args+=(--isolate); fi
+        if [ "$IN_PROFILES" != "suite" ]; then args+=(--profiles "$IN_PROFILES"); fi
+        if [ "$IN_GATE" = "true" ]; then args+=(--gate); fi
+        vae "${args[@]}"
+    - name: Compare with baseline
+      if: inputs.baseline != ''
+      shell: bash
+      env:
+        IN_BASELINE: ${{ inputs.baseline }}
+        IN_RESULTS: ${{ inputs.results }}
+      run: vae compare "$IN_BASELINE" "$IN_RESULTS" --ignore-latency --step-summary

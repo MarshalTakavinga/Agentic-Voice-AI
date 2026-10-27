@@ -3,9 +3,9 @@ name: demo
 on:
   push:
     branches: [main]
-    paths: ["demo/**", "01-agentic-voice-ivr/**", "02-sip-call-doctor/**", ".github/workflows/demo.yml"]
+    paths: ["demo/**", "01-agentic-voice-ivr/**", "02-sip-call-doctor/**", "03-voice-agent-evals/**", ".github/workflows/demo.yml"]
   pull_request:
-    paths: ["demo/**", "01-agentic-voice-ivr/**", "02-sip-call-doctor/**", ".github/workflows/demo.yml"]
+    paths: ["demo/**", "01-agentic-voice-ivr/**", "02-sip-call-doctor/**", "03-voice-agent-evals/**", ".github/workflows/demo.yml"]
   workflow_dispatch:
 
 permissions:

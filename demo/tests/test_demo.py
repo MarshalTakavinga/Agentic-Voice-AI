@@ -256,4 +256,30 @@ def test_home_lists_all_ten_projects():
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
     text = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption)
-    assert "10 · Smart Call Router" in text and text.count("Planned") == 8
+    assert "10 · Smart Call Router" in text and text.count("Planned") == 7
+    assert any(link.label == "03 · Voice Agent Evals" for link in at.get("page_link"))
+
+
+def test_evals_page_runs_quick_suite_and_gates_pass():
+    at = _page("evals")
+    _button(at, "Run evaluation").click().run()
+    assert not at.exception, at.exception
+    assert any("Gates passed" in s.value and "22 of 22" in s.value for s in at.success)
+    assert at.session_state["evals_result"].summary["unauthorized_tool_calls"] == 0
+
+
+def test_evals_page_noise_engine_table():
+    at = _page("evals")
+    at.text_input[0].input("my pin is 1234").run()
+    frames = [df.value for df in at.dataframe]
+    noise = next(f for f in frames if "Recognizer might return" in f.columns)
+    row = noise.set_index("Profile").loc["homophones"]
+    assert row["Recognizer might return"] == "my pin is won to three for"
+
+
+def test_evals_page_never_enables_the_llm_planner():
+    from views.evals import _ivr_settings  # noqa: PLC0415
+
+    s = _ivr_settings()
+    assert s.nlu_provider == "rules" and not s.planner_enabled
+    assert s.anthropic_api_key.get_secret_value() == ""

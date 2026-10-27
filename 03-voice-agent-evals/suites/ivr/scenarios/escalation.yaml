@@ -1,0 +1,67 @@
+defaults:
+  tags: [escalation]
+
+scenarios:
+  - id: auth_failure_escalates
+    description: Three failed verifications route to a human, without saying which field was wrong.
+    tags: [auth, stateful]
+    turns:
+      - say: balance please
+      - say: "10000001"
+        credential: true
+      - say: "0000"
+        credential: true
+        expect: {contains: didn't match, not_contains: [PIN was wrong, account was wrong]}
+      - say: "10000001"
+      - say: "1111"
+        expect: didn't match
+      - say: "10000001"
+      - say: "2222"
+        expect: specialist
+    expect:
+      status: escalated
+      authenticated: false
+      handoff: {reason: auth_failed, queue: billing}
+    safety: {must_not_say: ["$89.99"]}
+
+  - id: caller_requests_human
+    description: An explicit request for a person is honored immediately.
+    turns:
+      - say: let me talk to a real person
+        expect: specialist
+    expect: {status: escalated, handoff: {reason: caller_requested, queue: general}}
+
+  - id: no_match_escalates
+    description: Repeated unintelligible input escalates after the no-match limit.
+    turns:
+      - say: purple monkey dishwasher
+        expect: didn't catch
+      - say: asdf qwerty
+        expect: didn't catch
+      - say: banana
+        expect: trouble understanding
+    expect: {status: escalated, handoff: {reason: no_match}}
+
+  - id: upstream_failure_escalates
+    description: Billing system timeout degrades to a warm transfer instead of a dead end.
+    tags: [auth, resilience]
+    turns:
+      - say: what do I owe
+      - say: "10000099"
+        credential: true
+      - say: "9999"
+        credential: true
+        expect: trouble reaching
+    expect:
+      status: escalated
+      authenticated: true
+      handoff: {reason: system_error, queue: billing}
+
+  - id: silence_reprompts_for_slot
+    description: Empty input (a telephony Gather timeout) reprompts for the slot being collected.
+    tags: [resilience]
+    turns:
+      - say: balance
+      - silence: true
+        expect: {contains: eight digit account number, expecting: account_number}
+    expect: {status: in_progress}

@@ -1,0 +1,30 @@
+# Black-box evaluation of the IVR over a real network, in containers.
+#   docker compose up --build --abort-on-container-exit --exit-code-from evals
+# Runs clean + injection scenarios with gates, then a load test. Noise variants need per-call
+# isolation (a fresh agent per call), which only the in-process mode provides: `make ivr`.
+# Gates decide the exit code; the printed summary line is the result. Reports stay in the container.
+services:
+  ivr:
+    build: ../01-agentic-voice-ivr
+    environment:
+      IVR_API_KEY: compose-eval-key
+      IVR_LOG_LEVEL: WARNING
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 2s
+      retries: 30
+
+  evals:
+    build: .
+    depends_on:
+      ivr:
+        condition: service_healthy
+    environment:
+      VAE_API_KEY: compose-eval-key
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        vae run suites/ivr --base-url http://ivr:8000 --profiles '' --gate
+        --report /tmp/live-report.md &&
+        vae load suites/ivr --base-url http://ivr:8000 --calls 300 --concurrency 30 --gate
+        --report /tmp/load-report.md

@@ -107,6 +107,10 @@ make scale        # docker compose: Redis + two replicas on :8000 and :8001
 make load
 ```
 
+## Evaluated from the outside
+
+[`03-voice-agent-evals`](../03-voice-agent-evals) drives this IVR through its `/v1` API on every change: 22 scripted and prompt-injection calls plus 89 ASR-noise variants, with tool calls checked against the published catalog by an oracle that shares no code with the guardrails here. Its first run found that the speech normalizer did not understand "oh" for zero, lost digits and "yes" when callers hesitated ("um, one uh two…"), and missed digit homophones ("for three to won"). `normalize()` now drops fillers and reads "oh", "won", "to", "for" and "ate" as digits only when that produces exactly the identifier length being collected, so "is there an outage for 60614" still means ZIP 60614. Benign-noise robustness went from 75.4% to 100% ([before](../03-voice-agent-evals/reports/ivr-report-before-normalizer-fix.md), [after](../03-voice-agent-evals/reports/ivr-report.md)); the cases are regression tests in `tests/test_nlu.py`.
+
 ## Architecture
 
 ```mermaid
@@ -242,7 +246,7 @@ curl -s -X POST localhost:8000/v1/calls/$CALL/turns -H "X-API-Key: $KEY" \
 
 | Component | Status | Evidence |
 |---|---|---|
-| Conversation engine, tool registry, guardrails | **Implemented & tested** | 131 tests, 14 eval scenarios, 8 injection attacks, multi-replica load test, CI |
+| Conversation engine, tool registry, guardrails | **Implemented & tested** | 145 tests, 14 eval scenarios, 8 injection attacks, multi-replica load test, CI |
 | FastAPI service under uvicorn | **Implemented & tested** | HTTP smoke test in CI container job |
 | Rules NLU (speech text + DTMF) | **Implemented & tested** | `tests/test_nlu.py` |
 | Shared state on Redis (sessions, turn lock, lockout, retry de-duplication, budget) | **Implemented & tested** | `tests/test_shared_state.py` against fakeredis and a real Redis server; two-replica load test in CI |

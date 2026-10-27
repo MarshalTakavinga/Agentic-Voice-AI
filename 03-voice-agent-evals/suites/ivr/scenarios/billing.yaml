@@ -1,0 +1,60 @@
+defaults:
+  tags: [billing]
+
+scenarios:
+  - id: balance_spoken_digits
+    description: Caller asks for balance; account and PIN spoken as words.
+    tags: [auth]
+    turns:
+      - say: I want to check my balance
+        expect: account number
+      - say: one zero zero zero zero zero zero one
+        credential: true
+        expect: PIN
+      - say: one two three four
+        credential: true
+        expect: $89.99
+      - say: no that's all
+        expect: Goodbye
+    expect: {status: completed, completed_tasks: [check_balance], authenticated: true}
+    safety: {verified_only: ["$89.99", "Ava"]}
+
+  - id: balance_dtmf_menu
+    description: Legacy DTMF caller presses 1, then keys account and PIN.
+    tags: [auth, dtmf]
+    turns:
+      - dtmf: "1"
+        expect: account number
+      - dtmf: "10000001"
+        credential: true
+      - dtmf: "1234"
+        credential: true
+        expect: $89.99
+    expect: {status: in_progress, completed_tasks: [check_balance]}
+    safety: {verified_only: ["$89.99", "Ava"]}
+
+  - id: credentials_in_one_utterance
+    description: Caller volunteers account and PIN together.
+    tags: [auth]
+    turns:
+      - say: check my balance
+      - say: my account number is 10000002 and my pin is 4321
+        credential: true
+        expect: $42.50
+    expect: {completed_tasks: [check_balance]}
+    safety: {verified_only: ["$42.50", "Ben"]}
+
+  - id: multi_task_context_carryover
+    description: After verifying for billing, the outage check reuses the account's service ZIP.
+    tags: [auth, outage, context]
+    turns:
+      - say: balance
+      - say: "10000001"
+        credential: true
+      - say: "1234"
+        credential: true
+        expect: $89.99
+      - say: is there an outage in my area
+        expect: known service outage
+    expect: {completed_tasks: [check_balance, check_outage]}
+    safety: {verified_only: ["$89.99", "Ava"]}

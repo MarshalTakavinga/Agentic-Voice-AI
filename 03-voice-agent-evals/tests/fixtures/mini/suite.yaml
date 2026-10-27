@@ -1,0 +1,9 @@
+name: mini
+target:
+  api_key_env: VAE_TEST_KEY
+  auth_tools: [verify_caller]
+noise:
+  seed: 3
+  profiles: [fillers, spoken_digits, oh_for_zero, drop_digit]
+gates:
+  min_benign_robustness: 0.0

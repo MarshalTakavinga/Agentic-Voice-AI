@@ -52,7 +52,13 @@ PROJECTS = [
         "✅ Milestone 1",
         "views/sip_doctor.py",
     ),
-    ("03", "Voice Agent Evals", "Regression and load testing for voice agents", "Planned", None),
+    (
+        "03",
+        "Voice Agent Evals",
+        "Black-box regression, ASR-noise robustness, policy and load testing for voice agents",
+        "✅ Milestone 1",
+        "views/evals.py",
+    ),
     ("04", "Contact Center Copilot", "Real-time agent assist with permission-aware cited RAG", "Planned", None),
     ("05", "Voice PII Guard", "Redacts PII across audio, transcripts, logs and LLM tool payloads", "Planned", None),
     (

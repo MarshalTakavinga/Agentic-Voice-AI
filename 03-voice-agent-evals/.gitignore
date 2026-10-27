@@ -1,0 +1,7 @@
+reports/ivr-results.json
+reports/ci-*
+reports/compose/
+.coverage
+coverage.xml
+*.egg-info/
+build/

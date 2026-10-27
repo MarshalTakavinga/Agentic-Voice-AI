@@ -12,7 +12,7 @@ from pathlib import Path
 import streamlit as st
 
 ROOT = Path(__file__).resolve().parent.parent
-for project in ("demo", "01-agentic-voice-ivr", "02-sip-call-doctor"):
+for project in ("demo", "01-agentic-voice-ivr", "02-sip-call-doctor", "03-voice-agent-evals"):
     path = str(ROOT / project)
     if path not in sys.path:
         sys.path.insert(0, path)
@@ -22,7 +22,11 @@ st.set_page_config(page_title="Agentic Voice AI · Demo", page_icon="📞", layo
 # Streamlit hot-reloads files under demo/ after a git push, but keeps already-imported project
 # packages (01's `app`, 02's `sipdoc`) in memory. If their source changed, drop them so the next
 # import loads the new code; otherwise new pages would call old code until a manual reboot.
-PROJECT_PACKAGES = {"app": ROOT / "01-agentic-voice-ivr" / "app", "sipdoc": ROOT / "02-sip-call-doctor" / "sipdoc"}
+PROJECT_PACKAGES = {
+    "app": ROOT / "01-agentic-voice-ivr" / "app",
+    "sipdoc": ROOT / "02-sip-call-doctor" / "sipdoc",
+    "vae": ROOT / "03-voice-agent-evals" / "vae",
+}
 
 
 def _source_fingerprint() -> tuple:
@@ -58,6 +62,7 @@ nav = st.navigation(
         st.Page(HERE / "views" / "home.py", title="Overview", icon="🏠", default=True),
         st.Page(HERE / "views" / "ivr.py", title="Agentic Voice IVR", icon="📞"),
         st.Page(HERE / "views" / "sip_doctor.py", title="SIP Call Doctor", icon="🩺"),
+        st.Page(HERE / "views" / "evals.py", title="Voice Agent Evals", icon="🧪"),
     ]
 )
 nav.run()

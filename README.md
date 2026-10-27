@@ -8,6 +8,7 @@ A portfolio of ten projects applying agentic AI to VoIP, IVR and contact-center 
 
 [![ivr](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/ivr.yml/badge.svg)](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/ivr.yml)
 [![sip-call-doctor](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/sip-call-doctor.yml/badge.svg)](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/sip-call-doctor.yml)
+[![voice-agent-evals](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/voice-agent-evals.yml/badge.svg)](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/voice-agent-evals.yml)
 [![demo](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/demo.yml/badge.svg)](https://github.com/MarshalTakavinga/Agentic-Voice-AI/actions/workflows/demo.yml)
 
 ---
@@ -18,7 +19,7 @@ A portfolio of ten projects applying agentic AI to VoIP, IVR and contact-center 
 |---|---|---|---|---|---|
 | 1 | **Agentic Voice IVR** | Conversational IVR that verifies callers, completes multi-step requests through guarded tool calls, and warm-transfers with context | Flagship | ✅ Milestones 1–3 built | [`01-agentic-voice-ivr/`](01-agentic-voice-ivr) |
 | 2 | **SIP Call Doctor** | Diagnoses one-way audio, NAT, codec, auth and quality faults from packet captures, with evidence-cited AI explanations | Flagship | ✅ Milestone 1 built | [`02-sip-call-doctor/`](02-sip-call-doctor) |
-| 3 | Voice Agent Evals | Regression and load testing: task completion, p95 latency, prompt-injection resistance | Advanced | Planned | [`03-voice-agent-evals/`](03-voice-agent-evals) |
+| 3 | **Voice Agent Evals** | Black-box gate for voice agents: scripted calls, ASR-noise variants, an independent policy oracle, latency and correctness-checked load; found and fixed three speech gaps in 01 | Advanced | ✅ Milestone 1 built | [`03-voice-agent-evals/`](03-voice-agent-evals) |
 | 4 | Contact Center Copilot | Real-time agent assist with permission-aware cited RAG and after-call summaries | Flagship | Planned | [`04-contact-center-copilot/`](04-contact-center-copilot) |
 | 5 | Voice PII Guard | Redacts PII across call audio, transcripts, logs and LLM tool payloads | Advanced | Planned | [`05-voice-pii-guard/`](05-voice-pii-guard) |
 | 6 | Contact Center Tool Gateway | MCP server exposing CRM/ACD actions with scopes, consent and audit | Intermediate | Planned | [`06-cc-tool-gateway/`](06-cc-tool-gateway) |
@@ -33,7 +34,7 @@ A portfolio of ten projects applying agentic AI to VoIP, IVR and contact-center 
 
 ### ▶️ [agentic-voice-ai.streamlit.app](https://agentic-voice-ai.streamlit.app)
 
-**Call the IVR with your voice**: speak, hear it answer, use the keypad, and watch its state and tool audit trail update every turn. Or **diagnose SIP captures** and see packet-cited findings with ladder diagrams. Free hosting may take about 30 seconds to wake up on the first visit.
+**Call the IVR with your voice**: speak, hear it answer, use the keypad, and watch its state and tool audit trail update every turn. Or **diagnose SIP captures** and see packet-cited findings with ladder diagrams. Or **run the eval suite** against the IVR and watch the gates, and see what speech recognition does to a sentence you type. Free hosting may take about 30 seconds to wake up on the first visit.
 
 Run it locally:
 
@@ -66,7 +67,7 @@ flowchart LR
     AD --> MK["Mock adapters<br/>(default)"]
     AD -.-> LV["Live adapters<br/>(labeled by status)"]
     AG --> OB["Observability<br/>structlog · Prometheus · OpenTelemetry"]
-    EV["Evals (project 3)"] -.-> EDGE
+    EV["Evals (project 3)<br/>gates every change to 01"] -.-> EDGE
 ```
 
 ## Try it
@@ -84,6 +85,12 @@ cd ..
 cd 02-sip-call-doctor
 pip install -r requirements.lock && pip install -e ".[dev]"
 python -m sipdoc analyze captures/nat_one_way_audio.pcap
+cd ..
+
+# 03: evaluate the IVR from the outside (needs 01 installed, as above)
+cd 03-voice-agent-evals
+pip install -r requirements.lock && pip install -e ".[dev]"
+make ivr          # 111 calls: scenarios, ASR-noise variants, injection attacks, gates
 ```
 
 Use a separate virtual environment per project; each pins its own dependencies.
@@ -93,7 +100,7 @@ Use a separate virtual environment per project; each pins its own dependencies.
 ```text
 01-…/ to 10-…/        one project per folder: own README, pyproject, tests, Dockerfile
 .github/workflows/    one CI workflow per built project, triggered only by changes to its folder
-demo/                 Streamlit app running projects 01 and 02 in the browser
+demo/                 Streamlit app running projects 01, 02 and 03 in the browser
 docs/                 portfolio strategy, roadmap and reference material
 ```
 
