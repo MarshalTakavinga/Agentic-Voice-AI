@@ -85,7 +85,7 @@ jobs:
           baseline: 03-voice-agent-evals/baselines/ivr.json
           report: 03-voice-agent-evals/reports/ci-ivr-report.md
           results: 03-voice-agent-evals/reports/ci-ivr-results.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: voice-agent-evals-ivr
@@ -119,7 +119,7 @@ jobs:
         run: make ivr-live
       - name: Load test (every call checked for correctness)
         run: make load
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: voice-agent-evals-live
