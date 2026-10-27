@@ -42,7 +42,7 @@ jobs:
         run: python scripts/run_evals.py --fail-under 1.0
       - name: Prompt-injection evals (compromised model)
         run: python scripts/run_injection_evals.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: matrix.python-version == '3.13'
         with:
           name: ivr-reports
@@ -89,7 +89,7 @@ jobs:
           python scripts/load_test.py --api-key ci-key --calls 300 --concurrency 30
           --targets http://localhost:8001,http://localhost:8002
           --label "CI: 2 replicas, shared Redis" --report evals/load_report_ci.md
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ivr-load-report

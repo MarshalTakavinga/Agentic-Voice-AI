@@ -40,7 +40,7 @@ jobs:
         run: pytest --cov=sipdoc --cov-report=xml --cov-fail-under=90
       - name: Evals
         run: python scripts/generate_captures.py && python scripts/run_evals.py --fail-under 1.0
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: matrix.python-version == '3.13'
         with:
           name: sip-call-doctor-reports
