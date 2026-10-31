@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1.7
-FROM python:3.13-slim AS build
+FROM python:3.15-slim AS build
 WORKDIR /build
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 COPY requirements.lock pyproject.toml README.md ./
 COPY sipdoc ./sipdoc
 RUN pip install --prefix=/install -r requirements.lock && pip install --prefix=/install --no-deps .
 
-FROM python:3.13-slim AS runtime
+FROM python:3.15-slim AS runtime
 LABEL org.opencontainers.image.title="sip-call-doctor" \
       org.opencontainers.image.description="Evidence-first SIP/RTP troubleshooting (portfolio project)" \
       org.opencontainers.image.licenses="MIT"
